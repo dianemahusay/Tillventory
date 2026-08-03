@@ -1,6 +1,6 @@
-import { router, Stack } from "expo-router";
-import React, { useState, useEffect } from "react";
-import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { router, Stack, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { databases } from "../services/appwrite";
 import { isProductLowStock, ProductItem, renderStockText } from "../services/stockUtils";
 
@@ -8,8 +8,12 @@ const DATABASE_ID = "6a694ca9001b95d71b14";
 const PRODUCTS_COLLECTION_ID = "products";
 
 export default function ViewStockScreen() {
+  const { username } = useLocalSearchParams();
+  const activeUsername = typeof username === "string" ? username : "";
+
   const [lowStockItems, setLowStockItems] = useState<ProductItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   useEffect(() => {
     fetchStockData();
@@ -33,8 +37,14 @@ export default function ViewStockScreen() {
       Alert.alert("Error", "Failed to load stock data from Appwrite.");
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void fetchStockData();
+  }, []);
 
   return (
     <View style={{ flex: 1 }} className="bg-background pt-16">
@@ -49,7 +59,11 @@ export default function ViewStockScreen() {
       </View>
 
       {/* Main Stock Scroll Inventory View List */}
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60 }} className="flex-1">
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60 }}
+        className="flex-1"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {/* Descriptive Warning Prompt Message Subheading */}
         <Text className="text-base text-neutral-400 font-body mb-5">
           Items requiring restock attention.
@@ -81,7 +95,7 @@ export default function ViewStockScreen() {
                   onPress={() =>
                     router.push({
                       pathname: "/restock",
-                      params: { productId: item.$id },
+                      params: { productId: item.$id, username: activeUsername },
                     })
                   }
                   className="px-5 py-1.5 rounded-xl border bg-red-50 border-red-500 active:bg-red-100"

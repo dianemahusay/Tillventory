@@ -149,7 +149,12 @@ export default function OwnerDashboard() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push("/restock")}
+          onPress={() =>
+            router.push({
+              pathname: "/restock",
+              params: { username: username },
+            })
+          }
           className="w-[30%] bg-white border border-neutral-800 rounded-xl py-4 items-center justify-center active:bg-neutral-100"
         >
           <Text className="text-2xl mb-1">🧺</Text>
@@ -179,7 +184,7 @@ export default function OwnerDashboard() {
           className="w-[30%] bg-white border border-neutral-800 rounded-xl py-4 items-center justify-center active:bg-neutral-100"
         >
           <Text className="text-2xl mb-1">📊</Text>
-          <Text className="text-xs font-bodyBold text-neutral-900">Stock Reports</Text>
+          <Text className="text-xs font-bodyBold text-neutral-900">Inventory</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -220,7 +225,7 @@ export default function OwnerDashboard() {
                 onPress={() =>
                   router.push({
                     pathname: "/restock",
-                    params: { productId: item.$id },
+                    params: { productId: item.$id, username: username },
                   })
                 }
                 className="bg-red-50 border border-red-500 px-5 py-1.5 rounded-xl active:bg-red-100"

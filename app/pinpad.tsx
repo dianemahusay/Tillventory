@@ -1,9 +1,9 @@
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState, useEffect } from "react";
-import { Alert, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
-import { useGlobalProfiles } from "./_layout";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { Query } from "react-native-appwrite";
 import { databases } from "../services/appwrite";
+import { useGlobalProfiles } from "./_layout";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
 const PROFILES_COLLECTION_ID = "profiles";
@@ -16,6 +16,7 @@ export default function PinPad() {
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const { profiles } = useGlobalProfiles();
   
@@ -49,7 +50,13 @@ export default function PinPad() {
       console.error("Failed to fetch profile details:", error);
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    void fetchTargetProfile();
   };
 
   const handleNumberPress = (num: string) => {
@@ -82,10 +89,12 @@ export default function PinPad() {
   const handleStartShift = () => {
     // Dynamic routing based on role (Owner/Admin vs Barista/Staff)
     const userRole = userProfile?.role?.toLowerCase() || "";
+    const profileName = currentProfile?.toLowerCase() || "";
     const isOwnerOrAdmin =
       userRole === "owner" ||
       userRole === "admin" ||
-      currentProfile.toLowerCase() === "kate";
+      profileName === "owner" ||
+      profileName === "kate";
 
     if (isOwnerOrAdmin) {
       router.replace({
@@ -102,7 +111,11 @@ export default function PinPad() {
 
   if (showSuccessScreen) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }} className="bg-background px-6">
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center", paddingVertical: 24 }}
+        className="bg-background px-6"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         <View className="items-center mb-29">
           <Text className="text-4xl font-heading mb-2">Cafe Uno</Text>
           <Text className="text-sm text-neutral-400 font-medium">Authentication Success</Text>
@@ -125,12 +138,16 @@ export default function PinPad() {
         >
           <Text className="text-white text-base font-semibold">Start Shift</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     );
   }
 
   return (
-    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }} className="bg-background px-6">
+    <ScrollView
+      contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center", paddingVertical: 24 }}
+      className="bg-background px-6"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <View className="items-center mb-8">
         <Text className="text-4xl text-textPrimary font-heading mb-2">Cafe Uno</Text>
         <TouchableOpacity onPress={() => router.back()}>
@@ -199,6 +216,6 @@ export default function PinPad() {
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }

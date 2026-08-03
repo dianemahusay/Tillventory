@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
-import {Alert} from "react-native";
-import { Text, View, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
-import { router, useLocalSearchParams, Stack } from "expo-router";
-import { Models, ID, Query } from "react-native-appwrite";
+import { router, Stack, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { ID, Models, Query } from "react-native-appwrite";
 import { databases } from '../services/appwrite';
 import { useGlobalProfiles } from "./_layout";
 
@@ -34,6 +33,10 @@ export default function NewSale() {
 
   const { profiles} = useGlobalProfiles();
   const currentProfile = profiles.find((p) => p.name === username);
+  const displayName = currentProfile?.name || (typeof username === "string" ? username : "") || "Staff";
+  const isOwnerSession =
+    currentProfile?.role === "owner" ||
+    displayName.toLowerCase() === "owner";
 
   // Core layout tracking states
   const [activeCategory, setActiveCategory] = useState<"All" | "Drinks" | "Foods" | "Pastries">("All");
@@ -43,6 +46,7 @@ export default function NewSale() {
   // Clean menu dataset containing prices mapped as raw compute floats
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   useEffect(() => {
     fetchMenuItems();
@@ -61,8 +65,14 @@ export default function NewSale() {
       Alert.alert("Error Loading Menu", "Could not fetch menu items. Please try again.");
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void fetchMenuItems();
+  }, []);
 
   // Append items to cart state on tap interaction
   const handleAddItem = (item: MenuItem) => {
@@ -140,7 +150,7 @@ export default function NewSale() {
                 products_id: productId,
                 action_type: "Sale",
                 quantity_changed: -totalDeduction, // Negative delta for sales
-                note: `Automated order deduction: ${item.quantity}x ${item.name}`,
+                note: `${displayName}: Automated order deduction: ${item.quantity}x ${item.name}`,
               }
             );
           }
@@ -160,6 +170,8 @@ export default function NewSale() {
           total_price: totalAmount,
           items_summary: itemsSummary,
           profiles_id: currentProfile?.$id || undefined,
+          profile_name: displayName,
+          staff_name: displayName,
         }
       );
 
@@ -182,7 +194,10 @@ export default function NewSale() {
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Main Grid Scroll Content Box Layout */}
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 280, paddingTop: 20 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 280, paddingTop: 20 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
 
         {/* Top Header Section with Hamburger on the right ONLY for staff */}
         <View className="flex-row justify-between items-center mb-4 border-b border-neutral-300 pb-2">
@@ -261,7 +276,7 @@ export default function NewSale() {
       <View className="absolute bottom-0 left-0 right-0 bg-neutral-200/95 rounded-t-[32px] p-6 pb-10 border-t border-neutral-300">
         <View className="flex-row justify-between items-center mb-2">
           <Text className="text-md text-neutral-800 font-bodyBold">
-            Order - rung up by {username || "Staff"}
+            Order - rung up by {displayName}
           </Text>
           <TouchableOpacity onPress={() => setCart({})}>
             <Text className="text-sm text-neutral-500 font-body underline">Cancel</Text>
@@ -310,8 +325,8 @@ export default function NewSale() {
           )}
         </TouchableOpacity>
 
-        {/* Bottom context router helper to return to dashboard strictly for Kate */}
-        {username === "Kate" && (
+        {/* Bottom context router helper to return to the owner dashboard for owner sessions */}
+        {isOwnerSession && (
           <TouchableOpacity onPress={() => router.replace("/owner-dash")} className="mt-4 self-center">
             <Text className="text-xs text-neutral-400 font-bodySemiBold underline">Back to Dashboard</Text>
           </TouchableOpacity>
@@ -319,7 +334,7 @@ export default function NewSale() {
       </View>
 
       {/* --- STAFF SLIDE-OUT OVERLAY SIDEBAR INTERFACE --- */}
-      {showSidebar && username !== "Kate" && (
+      {showSidebar && !isOwnerSession && (
         <View className="absolute inset-0 bg-black/40 flex-row justify-end" style={{ zIndex: 100 }}>
           {/* Dismiss Back-tap area anchor */}
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowSidebar(false)} />
@@ -349,7 +364,7 @@ export default function NewSale() {
                 }}
                 className="w-full py-3 px-4 bg-neutral-50 rounded-xl border border-neutral-200 active:bg-neutral-100"
               >
-                <Text className="text-sm font-bodySemiBold text-neutral-800">📦 View Stock</Text>
+                <Text className="text-md font-bodySemiBold text-neutral-800">📦 View Stock</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -362,7 +377,7 @@ export default function NewSale() {
                 }}
                 className="w-full py-3 px-4 bg-neutral-50 rounded-xl border border-neutral-200 active:bg-neutral-100"
               >
-                <Text className="text-sm font-bodySemiBold text-neutral-800">📋  Activity Log</Text>
+                <Text className="text-md font-bodySemiBold text-neutral-800">📋  Activity Log</Text>
               </TouchableOpacity>
 
               {/* Log out profile shift exit button */}
@@ -370,7 +385,7 @@ export default function NewSale() {
                 onPress={() => { setShowSidebar(false); router.replace("/"); }}
                 className="w-full py-3 px-4 bg-red-50 rounded-xl border border-red-200 mt-auto mb-8 active:bg-red-100"
               >
-                <Text className="text-sm font-bodyBold text-red-600 text-center">🔒 Log Out Shift</Text>
+                <Text className="text-md font-bodyBold text-red-600 text-center">🔒 Log Out Shift</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -8,6 +8,18 @@ const PRODUCTS_COLLECTION_ID = "products";
 const LOGS_COLLECTION_ID = "inventory_logs";
 const PROFILES_COLLECTION_ID = "profiles"; // Ensure this matches your Appwrite profiles collection ID
 
+const getKnownProfileNames = async (): Promise<string[]> => {
+  try {
+    const res: any = await databases.listDocuments(DATABASE_ID, PROFILES_COLLECTION_ID);
+    return (res.documents || [])
+      .map((doc: any) => String(doc.name || "").trim())
+      .filter(Boolean);
+  } catch (error) {
+    console.warn("Could not load profile names for activity fallback:", error);
+    return [];
+  }
+};
+
 export interface CombinedActivityLog {
   id: string;
   type: "sale" | "inventory";
@@ -32,18 +44,41 @@ export const formatActivityTime = (isoString?: string): string => {
  * a raw document ID string, or a direct string property.
  */
 const resolveStaffName = async (doc: any): Promise<string> => {
-  // 1. Direct name string fields on the document
-  if (doc.staff_name) return doc.staff_name;
-  if (doc.username) return doc.username;
+  const directName =
+    doc.staff_name ||
+    doc.profile_name ||
+    doc.username ||
+    doc.name ||
+    doc.user_name;
+
+  if (directName) return String(directName);
+
+  const noteText = typeof doc.note === "string" ? doc.note.trim() : "";
+  const noteNameMatch = noteText.match(
+    /^(?:by\s+)?([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{1,40})\s*(?:[:|]|—)/i
+  );
+  if (noteNameMatch) return noteNameMatch[1].trim();
+
+  const knownProfileNames = await getKnownProfileNames();
+  const normalizedNote = noteText.toLowerCase();
+  const matchingProfile = knownProfileNames.find((profileName) =>
+    normalizedNote.includes(profileName.toLowerCase())
+  );
+  if (matchingProfile) return matchingProfile;
 
   const profileRef = doc.profiles_id || doc.profile_id;
 
-  // 2. Already populated as a Relationship Object
   if (typeof profileRef === "object" && profileRef !== null) {
-    return profileRef.name || profileRef.username || "Kate";
+    const nestedName =
+      profileRef.name ||
+      profileRef.username ||
+      profileRef.profile_name ||
+      profileRef.staff_name ||
+      profileRef.user_name;
+
+    if (nestedName) return String(nestedName);
   }
 
-  // 3. Raw String ID -> Fetch Profile Document from Appwrite
   if (typeof profileRef === "string" && profileRef.trim() !== "") {
     try {
       const pDoc: any = await databases.getDocument(
@@ -51,14 +86,26 @@ const resolveStaffName = async (doc: any): Promise<string> => {
         PROFILES_COLLECTION_ID,
         profileRef
       );
-      if (pDoc.name) return pDoc.name;
-      if (pDoc.username) return pDoc.username;
+      const fetchedName =
+        pDoc.name ||
+        pDoc.username ||
+        pDoc.profile_name ||
+        pDoc.staff_name ||
+        pDoc.user_name;
+
+      if (fetchedName) return String(fetchedName);
+
+      const role = String(pDoc.role || "").toLowerCase();
+      if (role === "owner" || role === "admin") return "Owner";
     } catch (e) {
       console.warn("Could not fetch profile document for ID:", profileRef);
     }
   }
 
-  return "Kate";
+  const role = String(doc.role || "").toLowerCase();
+  if (role === "owner" || role === "admin") return "Owner";
+
+  return "Unknown";
 };
 
 export const fetchCombinedActivities = async (options?: {
@@ -105,11 +152,19 @@ export const fetchCombinedActivities = async (options?: {
       const action = (doc.action_type || doc.type || "").toLowerCase();
       const note = (doc.note || doc.title || "").toLowerCase();
 
-      // Skip background recipe deductions
-      if (note.includes("staff sale") || action === "deduction" || action === "recipe_deduct") {
+      // Parse the quantity change
+      const qtyChanged = Number(doc.quantity_changed || doc.qty_added || doc.qty_changed || 0);
+
+      if (
+        note.includes("sale") ||
+        action === "deduction" ||
+        action === "recipe_deduct" ||
+        action === "sale"
+      ) {
         return false;
       }
-      return action === "restock" || action === "sale";
+
+      return action === "restock" && qtyChanged > 0;
     });
 
     const formattedLogs: CombinedActivityLog[] = await Promise.all(
@@ -159,3 +214,4 @@ export const fetchCombinedActivities = async (options?: {
     return [];
   }
 };
+

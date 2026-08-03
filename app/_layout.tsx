@@ -1,11 +1,11 @@
-import { useCallback, createContext, useState, useContext, useEffect } from 'react';
-import { View } from 'react-native';
+import { Fraunces_600SemiBold, useFonts } from '@expo-google-fonts/fraunces';
+import { Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useFonts, Fraunces_600SemiBold } from '@expo-google-fonts/fraunces';
-import { Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { databases } from '../services/appwrite';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { View } from 'react-native';
 import { ID } from 'react-native-appwrite';
+import { databases } from '../services/appwrite';
 
 
 import './global.css';
@@ -25,7 +25,8 @@ export interface Profile {
 interface ProfileContextType {
   profiles: Profile[];
   addProfile: (profile: Omit<Profile, '$id'>) => Promise<void>;
-  deleteProfile: (name: string) => Promise<void>; 
+  deleteProfile: (name: string) => Promise<void>;
+  updateProfile: (profileId: string, updates: Partial<Pick<Profile, 'name' | 'pin'>>) => Promise<void>;
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
@@ -101,9 +102,31 @@ export default function RootLayout() {
         PROFILES_COLLECTION_ID,
         profileId
       );
-      setProfiles((prev) => prev.filter((p) => p.$id === profileId));
+      setProfiles((prev) => prev.filter((p) => p.$id !== profileId));
     } catch (error) {
       console.error('Failed to delete profile:', error);
+    }
+  };
+
+  // 4. Update profile fields
+  const updateProfile = async (profileId: string, updates: Partial<Pick<Profile, 'name' | 'pin'>>) => {
+    const target = profiles.find((p) => p.$id === profileId);
+    if (!target || !target.$id) return;
+
+    try {
+      await databases.updateDocument(
+        DATABASE_ID,
+        PROFILES_COLLECTION_ID,
+        profileId,
+        updates
+      );
+      setProfiles((prev) =>
+        prev.map((profile) =>
+          profile.$id === profileId ? { ...profile, ...updates } : profile
+        )
+      );
+    } catch (error) {
+      console.error('Failed to update profile:', error);
     }
   };
 
@@ -114,7 +137,7 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <ProfileContext.Provider value={{ profiles, addProfile, deleteProfile }}>
+    <ProfileContext.Provider value={{ profiles, addProfile, deleteProfile, updateProfile }}>
       <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
         <Stack
           screenOptions={{

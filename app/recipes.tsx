@@ -1,19 +1,22 @@
 import { router } from "expo-router";
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
+  Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
-  ActivityIndicator,
-  Modal,
-  FlatList,
 } from "react-native";
-import { Models, Query, ID } from "react-native-appwrite";
+import { ID, Models, Query } from "react-native-appwrite";
 import { databases } from "../services/appwrite";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
@@ -52,6 +55,7 @@ export default function RecipesScreen() {
   const [showBottomCard, setShowBottomCard] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   const [menuItems, setMenuItems] = useState<MenuItemRef[]>([]);
   const [availableProducts, setAvailableProducts] = useState<ProductItem[]>([]);
@@ -91,8 +95,14 @@ export default function RecipesScreen() {
       Alert.alert("Error", "Could not fetch data from Appwrite.");
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void loadInitialData();
+  }, []);
 
   const handleItemSelect = async (menuDocId: string | null) => {
     if (!menuDocId) {
@@ -409,7 +419,10 @@ export default function RecipesScreen() {
 
   return (
     <View style={{ flex: 1 }} className="bg-background pt-20">
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 360, paddingTop: 20 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 360, paddingTop: 20 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         <View className="mb-4">
           <Text className="text-4xl font-heading pb-2 border-b border-neutral-400">Cafe Uno</Text>
         </View>
@@ -638,69 +651,78 @@ export default function RecipesScreen() {
       </Modal>
       {/* --- CONFIGURE NEW PRODUCT UNITS SUB-MODAL --- */}
       <Modal visible={showUnitSetupModal} animationType="slide" transparent>
-        <View className="flex-1 bg-black/60 justify-end">
-          <View className="bg-white rounded-t-[32px] p-6 pb-10">
-            <View className="flex-row justify-between items-center mb-4 pb-2 border-b border-neutral-200">
-              <View>
-                <Text className="text-lg font-bodyBold text-neutral-900">Configure Ingredient Units</Text>
-                <Text className="text-xs font-body text-neutral-500">Item: {newProdName}</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "position"}
+          keyboardVerticalOffset={0}
+          enabled
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.38)" }}>
+              <View style={{ width: "100%", position: "absolute", bottom: 0, left: 0, right: 0 }} className="bg-white rounded-t-[32px] px-6 pt-6 pb-4">
+                <View className="flex-row justify-between items-center mb-4 pb-2 border-b border-neutral-200">
+                  <View>
+                    <Text className="text-lg font-bodyBold text-neutral-900">Configure Ingredient Units</Text>
+                    <Text className="text-xs font-body text-neutral-500">Item: {newProdName}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setShowUnitSetupModal(false)}>
+                    <Text className="text-xl font-bodyBold text-neutral-700">✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View className="gap-y-3 mb-6">
+                  <View>
+                    <Text className="text-xs font-bodyBold text-neutral-800 mb-1">Recipe / Usage Unit</Text>
+                    <TextInput
+                      value={newRecipeUnit}
+                      onChangeText={setNewRecipeUnit}
+                      placeholder="e.g. shot, cup, tbsp, g"
+                      placeholderTextColor="#bbb2b2"
+                      className="w-full h-11 bg-neutral-100 border border-neutral-300 rounded-xl px-3 text-sm font-body text-neutral-900"
+                    />
+                  </View>
+
+                  <View>
+                    <Text className="text-xs font-bodyBold text-neutral-800 mb-1">Restock / Packaging Unit</Text>
+                    <TextInput
+                      value={newRestockUnit}
+                      onChangeText={setNewRestockUnit}
+                      placeholder="e.g. bottle, carton, pack, bag"
+                      placeholderTextColor="#bbb2b2"
+                      className="w-full h-11 bg-neutral-100 border border-neutral-300 rounded-xl px-3 text-sm font-body text-neutral-900"
+                    />
+                  </View>
+
+                  <View>
+                    <Text className="text-xs font-bodyBold text-neutral-800 mb-1">
+                      Yield ({newRecipeUnit || "recipe units"} per 1 {newRestockUnit || "package"})
+                    </Text>
+                    <TextInput
+                      keyboardType="numeric"
+                      value={newConversionFactor}
+                      onChangeText={setNewConversionFactor}
+                      placeholder="30"
+                      placeholderTextColor="#bbb2b2"
+                      className="w-full h-11 bg-neutral-100 border border-neutral-300 rounded-xl px-3 text-sm font-bodyBold text-neutral-900"
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  disabled={isSaving}
+                  onPress={handleSaveNewProductToDatabase}
+                  className="w-full bg-accent py-3.5 rounded-xl items-center justify-center"
+                >
+                  {isSaving ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text className="text-white text-md font-bodyBold">Save Ingredient to Stock</Text>
+                  )}
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={() => setShowUnitSetupModal(false)}>
-                <Text className="text-xl font-bodyBold text-neutral-700">✕</Text>
-              </TouchableOpacity>
             </View>
-
-            <View className="gap-y-3 mb-6">
-              <View>
-                <Text className="text-xs font-bodyBold text-neutral-800 mb-1">Recipe / Usage Unit</Text>
-                <TextInput
-                  value={newRecipeUnit}
-                  onChangeText={setNewRecipeUnit}
-                  placeholder="e.g. shot, cup, tbsp, g"
-                  placeholderTextColor="#bbb2b2"
-                  className="w-full h-11 bg-neutral-100 border border-neutral-300 rounded-xl px-3 text-sm font-body text-neutral-900"
-                />
-              </View>
-
-              <View>
-                <Text className="text-xs font-bodyBold text-neutral-800 mb-1">Restock / Packaging Unit</Text>
-                <TextInput
-                  value={newRestockUnit}
-                  onChangeText={setNewRestockUnit}
-                  placeholder="e.g. bottle, carton, pack, bag"
-                  placeholderTextColor="#bbb2b2"
-                  className="w-full h-11 bg-neutral-100 border border-neutral-300 rounded-xl px-3 text-sm font-body text-neutral-900"
-                />
-              </View>
-
-              <View>
-                <Text className="text-xs font-bodyBold text-neutral-800 mb-1">
-                  Yield ({newRecipeUnit || "recipe units"} per 1 {newRestockUnit || "package"})
-                </Text>
-                <TextInput
-                  keyboardType="numeric"
-                  value={newConversionFactor}
-                  onChangeText={setNewConversionFactor}
-                  placeholder="30"
-                  placeholderTextColor="#bbb2b2"
-                  className="w-full h-11 bg-neutral-100 border border-neutral-300 rounded-xl px-3 text-sm font-bodyBold text-neutral-900"
-                />
-              </View>
-            </View>
-
-            <TouchableOpacity
-              disabled={isSaving}
-              onPress={handleSaveNewProductToDatabase}
-              className="w-full bg-accent py-3.5 rounded-xl items-center justify-center"
-            >
-              {isSaving ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text className="text-white text-md font-bodyBold">Save Ingredient to Stock</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

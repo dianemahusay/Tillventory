@@ -1,8 +1,9 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { ID, Models, Query } from "react-native-appwrite";
 import { databases } from "../services/appwrite";
+import { useGlobalProfiles } from "./_layout";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
 const PRODUCTS_COLLECTION_ID = "products";
@@ -16,7 +17,7 @@ export interface ProductItem extends Models.Document {
   restock_unit: string;
 }
 
-export type InventoryAction = "Restock" | "Correct" | "Waste" | "Sale";
+export type InventoryAction = "Restock" | "Correct_count" | "Waste" | "Sale";
 
 export interface InventoryLogDoc extends Models.Document {
   products_id: ProductItem | string;
@@ -28,6 +29,18 @@ export interface InventoryLogDoc extends Models.Document {
 }
 
 export default function RestockScreen() {
+  const { username } = useLocalSearchParams();
+  const { profiles } = useGlobalProfiles();
+
+  const requestedName = typeof username === "string" ? username : "";
+  const normalizedRequestedName = requestedName.trim().toLowerCase();
+  const currentProfile = profiles.find(
+    (profile: any) =>
+      (profile.name || "").trim().toLowerCase() === normalizedRequestedName
+  );
+
+  const profileName = currentProfile?.name?.trim() || requestedName.trim() || "Unknown";
+
   const [selectedType, setSelectedType] = useState<InventoryAction>("Restock");
   const [quantity, setQuantity] = useState<string>("");
   const [restockUnit, setRestockUnit] = useState<string>("");
@@ -38,7 +51,8 @@ export default function RestockScreen() {
   const [recentLogs, setRecentLogs] = useState<InventoryLogDoc[]>([]);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false); 
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   // DROPDOWN STATE CONTROLS
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
@@ -68,7 +82,13 @@ export default function RestockScreen() {
       Alert.alert("Error", "Could not fetch data from Appwrite.");
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchScreenData();
   };
 
   // 1. Calculate sum of quantities across all products (Tracked Stock)
@@ -120,7 +140,7 @@ export default function RestockScreen() {
       } else if (selectedType === "Waste") {
         updatedStock = Math.max(0, currentStock - qtyNum);
         actualChange = -qtyNum; // Negative delta for audit trail
-      } else if (selectedType === "Correct") {
+      } else if (selectedType === "Correct_count") {
         updatedStock = qtyNum;
         actualChange = qtyNum - currentStock; // Difference for audit
       }
@@ -157,7 +177,7 @@ export default function RestockScreen() {
           products_id: selectedProduct.$id,
           action_type: selectedType,
           quantity_changed: actualChange, // Uses actualChange so Waste records negative numbers!
-          note: note.trim() || undefined,
+          note: `${profileName.trim()} | ${note.trim() || "Inventory updated"}`,
         }
       );
 
@@ -192,6 +212,7 @@ export default function RestockScreen() {
     <ScrollView 
       style={{ flex: 1 }} 
       contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       className="bg-background px-6 pt-20"
     >
       {/* Top Branding Section */}
@@ -293,14 +314,14 @@ export default function RestockScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => setSelectedType("Correct")}
+              onPress={() => setSelectedType("Correct_count")}
               hitSlop={10}
               style={{
                 flex: 1,
                 minHeight: 48,
                 justifyContent: "center",
                 alignItems: "center",
-                backgroundColor: selectedType === "Correct" ? "#F5F5F4" : "#FFFFFF",
+                backgroundColor: selectedType === "Correct_count" ? "#F5F5F4" : "#FFFFFF",
                 borderRightWidth: 1,
                 borderRightColor: "#D4D4D4",
                 paddingHorizontal: 6,
@@ -333,7 +354,7 @@ export default function RestockScreen() {
         {/* Quantity Text Input */}
         <View>
           <Text className="text-sm font-bodyBold text-neutral-900 mb-1.5">
-            {selectedType === "Correct" ? "New Total Count" : "Quantity Amount"}
+            {selectedType === "Correct_count" ? "New Total Count" : "Quantity Amount"}
           </Text>
           <TextInput
             keyboardType="numeric"
@@ -341,7 +362,7 @@ export default function RestockScreen() {
             onChangeText={setQuantity}
             placeholder="0"
             placeholderTextColor="#A3A3A3"
-            className="w-full h-15 bg-white border border-neutral-300 rounded-xl px-4 text-neutral-900 font-body"
+            className="w-full h-10 bg-white border border-neutral-300 rounded-xl px-4 text-neutral-900 font-body"
           />
         </View>
 
@@ -369,7 +390,7 @@ export default function RestockScreen() {
             onChangeText={setNote}
             placeholder="Add additional notes..."
             placeholderTextColor="#A3A3A3"
-            className="w-full h-15 bg-white rounded-xl px-4 text-neutral-900 font-body"
+            className="w-full h-10 bg-white rounded-xl px-4 text-neutral-900 font-body"
           />
         </View>
 
@@ -395,7 +416,7 @@ export default function RestockScreen() {
       </View>
 
       {/* Navigation Redirect Button */}
-      <TouchableOpacity onPress={() => router.replace("/owner-dash")} className="mt-2 self-center">
+      <TouchableOpacity onPress={() => router.replace("/new-sale")} className="mt-2 self-center">
         <Text className="text-sm text-neutral-400 font-bodySemiBold underline">
           Back to Dashboard
         </Text>

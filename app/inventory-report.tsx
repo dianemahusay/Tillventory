@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
 import { router } from "expo-router";
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import {
   fetchInventoryReport,
   InventoryReportItem,
@@ -11,6 +11,7 @@ export default function InventoryReportScreen() {
   const [period, setPeriod] = useState<TimeframePeriod>("month");
   const [reportData, setReportData] = useState<InventoryReportItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   useEffect(() => {
     loadReport();
@@ -21,7 +22,13 @@ export default function InventoryReportScreen() {
     const data = await fetchInventoryReport(period);
     setReportData(data);
     setIsLoading(false);
+    setRefreshing(false);
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void loadReport();
+  }, [period]);
 
   // --- CUSTOM DISPLAY FORMATTERS ---
   const renderRestockedText = (count: number, unit: string) => {
@@ -108,7 +115,11 @@ export default function InventoryReportScreen() {
       </View>
 
       {/* Main Report Table List */}
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60 }} className="flex-1">
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60 }}
+        className="flex-1"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {isLoading ? (
           <ActivityIndicator color="#171717" size="large" className="py-10" />
         ) : reportData.length === 0 ? (

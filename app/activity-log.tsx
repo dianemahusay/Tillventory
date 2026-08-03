@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
 import { router } from "expo-router";
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { fetchCombinedActivities, CombinedActivityLog } from "../services/activityUtils";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { CombinedActivityLog, fetchCombinedActivities } from "../services/activityUtils";
 
 type ActivityCategory = "All" | "Drinks" | "Foods";
 
@@ -9,6 +9,7 @@ export default function ShiftActivityScreen() {
   const [activeTab, setActiveTab] = useState<ActivityCategory>("All");
   const [logs, setLogs] = useState<CombinedActivityLog[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   useEffect(() => {
     loadActivityLogs();
@@ -24,8 +25,14 @@ export default function ShiftActivityScreen() {
       console.error("Failed to fetch activity logs:", error);
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void loadActivityLogs();
+  }, []);
 
   const filteredActivities = logs.filter((log) => {
     if (activeTab === "All") return true;
@@ -69,6 +76,7 @@ export default function ShiftActivityScreen() {
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60 }}
         className="flex-1"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <View className="w-full">
           {isLoading ? (

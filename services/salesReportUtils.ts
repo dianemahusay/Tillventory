@@ -9,7 +9,7 @@ const PRODUCTS_COLLECTION_ID = "products";
 export type TimeframePeriod = "week" | "month";
 
 export interface ProfitBreakdownItem {
-  label: string; // e.g. "Mon, Aug 3" or "Week 1"
+  label: string;
   netProfit: number;
 }
 
@@ -19,7 +19,7 @@ export interface SalesReportSummary {
   netProfit: number;
   profitMarginPercent: number;
   totalOrders: number;
-  breakdown: ProfitBreakdownItem[]; // Daily or Weekly Net Profit list
+  breakdown: ProfitBreakdownItem[];
 }
 
 export const getSalesReportDates = (period: TimeframePeriod) => {
@@ -27,9 +27,13 @@ export const getSalesReportDates = (period: TimeframePeriod) => {
   const startDate = new Date();
 
   if (period === "week") {
-    startDate.setDate(now.getDate() - 7);
+    // 💡 DAILY MODE: Start strictly at Midnight TODAY (00:00:00)
+    // This accumulates today's sales continuously and resets at 12:00 AM midnight.
+    startDate.setHours(0, 0, 0, 0);
   } else if (period === "month") {
+    // 💡 MONTHLY MODE: Look back across the past 30 days
     startDate.setDate(now.getDate() - 30);
+    startDate.setHours(0, 0, 0, 0);
   }
 
   return {
@@ -44,9 +48,20 @@ export const fetchSalesReport = async (
   try {
     const { startDate, endDate } = getSalesReportDates(period);
 
+    // If in Weekly (Daily) mode, fetch the last 7 days of sales for the "Net Profit per Day" breakdown list
+    // but filter today's top cards strictly for today's continuous totals!
+    const breakdownStartDate = new Date();
+    if (period === "week") {
+      breakdownStartDate.setDate(breakdownStartDate.getDate() - 6);
+      breakdownStartDate.setHours(0, 0, 0, 0);
+    } else {
+      breakdownStartDate.setDate(breakdownStartDate.getDate() - 30);
+      breakdownStartDate.setHours(0, 0, 0, 0);
+    }
+
     const [salesRes, productsRes] = await Promise.all([
       databases.listDocuments(DATABASE_ID, SALE_COLLECTION_ID, [
-        Query.greaterThanEqual("$createdAt", startDate),
+        Query.greaterThanEqual("$createdAt", breakdownStartDate.toISOString()),
         Query.lessThanEqual("$createdAt", endDate),
         Query.orderDesc("$createdAt"),
         Query.limit(500),
@@ -63,20 +78,20 @@ export const fetchSalesReport = async (
     });
 
     const salesDocs = salesRes.documents;
-    const totalOrders = salesDocs.length;
 
     let grossRevenue = 0;
     let totalCOGS = 0;
+    let totalOrders = 0;
 
-    // Map for aggregating daily/weekly breakdowns
     const breakdownMap: Record<string, { revenue: number; cogs: number }> = {};
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
 
     salesDocs.forEach((sale: any) => {
+      const saleDate = new Date(sale.$createdAt);
       const saleTotal = Number(sale.total_price || sale.total || 0);
-      grossRevenue += saleTotal;
 
       let saleCOGS = 0;
-
       if (Array.isArray(sale.items)) {
         sale.items.forEach((item: any) => {
           const pId = item.productId || item.product_id;
@@ -88,26 +103,34 @@ export const fetchSalesReport = async (
         saleCOGS += Number(sale.cogs);
       }
 
-      // Fallback estimate (~35% COGS) if ingredient costs aren't attached directly
       if (saleCOGS === 0 && saleTotal > 0) {
         saleCOGS = saleTotal * 0.35;
       }
 
-      totalCOGS += saleCOGS;
-
-      // Group into breakdown buckets
-      const saleDate = new Date(sale.$createdAt);
-      let bucketLabel = "";
-
+      // 1. TOP CARDS CALCULATION:
+      // If Weekly toggle is selected, ONLY sum transactions created TODAY (>= todayMidnight)
       if (period === "week") {
-        // Group by Day (e.g. "Mon, Aug 3")
+        if (saleDate >= todayMidnight) {
+          grossRevenue += saleTotal;
+          totalCOGS += saleCOGS;
+          totalOrders += 1;
+        }
+      } else {
+        // Monthly view sums all past 30 days
+        grossRevenue += saleTotal;
+        totalCOGS += saleCOGS;
+        totalOrders += 1;
+      }
+
+      // 2. BREAKDOWN LIST CALCULATION:
+      let bucketLabel = "";
+      if (period === "week") {
         bucketLabel = saleDate.toLocaleDateString("en-US", {
           weekday: "short",
           month: "short",
           day: "numeric",
         });
       } else {
-        // Group by Week (e.g. "Week 1", "Week 2")
         const dayOfMonth = saleDate.getDate();
         const weekNum = Math.ceil(dayOfMonth / 7);
         bucketLabel = `Week ${weekNum}`;
@@ -124,7 +147,6 @@ export const fetchSalesReport = async (
     const netProfit = grossRevenue - totalCOGS;
     const profitMarginPercent = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
 
-    // Convert breakdown map into formatted array
     const breakdown: ProfitBreakdownItem[] = Object.keys(breakdownMap).map((label) => {
       const item = breakdownMap[label];
       return {

@@ -1,13 +1,20 @@
 import { router } from "expo-router";
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useState } from "react";
+import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useGlobalProfiles } from "./_layout"; // Import shared memory link hook
 
 export default function Index() {
   const { profiles } = useGlobalProfiles(); // Extract live database state entries
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleProfilePress = (name: string) => {
     router.push({ pathname: "/pinpad", params: { username: name } });
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 500);
+  }, []);
 
   return (
     <View style={{ flex: 1 }} className="bg-background px-4">
@@ -21,6 +28,7 @@ export default function Index() {
         }}
         className="w-full"
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <View className="items-center justify-center mb-6">
           <Text className="text-3xl font-bold text-textPrimary border-accent pb-1 font-heading text-center">

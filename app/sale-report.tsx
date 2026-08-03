@@ -1,6 +1,6 @@
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import {
   fetchSalesReport,
   SalesReportSummary,
@@ -11,6 +11,7 @@ export default function SalesReportScreen() {
   const [period, setPeriod] = useState<TimeframePeriod>("month");
   const [report, setReport] = useState<SalesReportSummary | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   useEffect(() => {
     loadSalesReport();
@@ -21,7 +22,13 @@ export default function SalesReportScreen() {
     const data = await fetchSalesReport(period);
     setReport(data);
     setIsLoading(false);
+    setRefreshing(false);
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void loadSalesReport();
+  }, [period]);
 
   const formatPHP = (amount: number) => {
     return `₱${amount.toLocaleString("en-PH", {
@@ -77,7 +84,11 @@ export default function SalesReportScreen() {
       </View>
 
       {/* Main Financial Report Content */}
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60 }} className="flex-1">
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60 }}
+        className="flex-1"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {isLoading ? (
           <ActivityIndicator color="#171717" size="large" className="py-10" />
         ) : (
@@ -155,7 +166,7 @@ export default function SalesReportScreen() {
         )}
 
         {/* Back Link */}
-        <TouchableOpacity onPress={() => router.back()} className="mt-10 self-center">
+        <TouchableOpacity onPress={() => router.replace("/owner-dash")} className="mt-10 self-center">
           <Text className="text-sm text-neutral-400 font-bodySemiBold underline">
             Back to Dashboard
           </Text>
