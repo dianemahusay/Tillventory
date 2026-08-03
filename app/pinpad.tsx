@@ -1,19 +1,59 @@
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
-import { Alert, Text, TouchableOpacity, View } from "react-native";
+import React, { useState, useEffect } from "react";
+import { Alert, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
 import { useGlobalProfiles } from "./_layout";
+import { Query } from "react-native-appwrite";
+import { databases } from "../services/appwrite";
+
+const DATABASE_ID = "6a694ca9001b95d71b14";
+const PROFILES_COLLECTION_ID = "profiles";
 
 export default function PinPad() {
   const { username } = useLocalSearchParams();
   const currentProfile = typeof username === "string" ? username : "";
+  
   const [pin, setPin] = useState("");
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
   const { profiles } = useGlobalProfiles();
+  
+  useEffect(() => {
+    fetchTargetProfile();
+  }, [currentProfile]);
+
+  const fetchTargetProfile = async () => {
+    try {
+      setIsLoading(true);
+
+      // 1. Try finding in local context first
+      let matched = profiles.find(
+        (p: any) => p.name?.toLowerCase() === currentProfile.toLowerCase()
+      );
+
+      // 2. Fallback: Query Appwrite if context isn't loaded
+      if (!matched && currentProfile) {
+        const res = await databases.listDocuments(
+          DATABASE_ID,
+          PROFILES_COLLECTION_ID,
+          [Query.equal("name", currentProfile)]
+        );
+        if (res.documents.length > 0) {}
+          matched = res.documents[0] as any;
+        
+      }
+
+      setUserProfile(matched || null);
+    } catch (error) {
+      console.error("Failed to fetch profile details:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleNumberPress = (num: string) => {
-    if (showSuccessScreen) {
-      return;
-    }
+    if (showSuccessScreen || isLoading) return;
 
     setPin((prev) => {
       const nextPin = prev + num;
@@ -22,8 +62,8 @@ export default function PinPad() {
         return nextPin;
       }
 
-      const targetUser = profiles.find((profile) => profile.name === currentProfile);
-      const expectedPin = targetUser?.pin ?? null;
+      // Ensure expected PIN is strictly treated as a string
+      const expectedPin = userProfile?.pin ? String(userProfile.pin) : null;
 
       if (nextPin === expectedPin) {
         setShowSuccessScreen(true);
@@ -40,15 +80,22 @@ export default function PinPad() {
   };
 
   const handleStartShift = () => {
-    if (currentProfile === "Kate") {
+    // Dynamic routing based on role (Owner/Admin vs Barista/Staff)
+    const userRole = userProfile?.role?.toLowerCase() || "";
+    const isOwnerOrAdmin =
+      userRole === "owner" ||
+      userRole === "admin" ||
+      currentProfile.toLowerCase() === "kate";
+
+    if (isOwnerOrAdmin) {
       router.replace({
         pathname: "/owner-dash",
-        params: { username: currentProfile },
+        params: { username: currentProfile, profileId: userProfile?.$id },
       });
     } else {
       router.replace({
         pathname: "/new-sale" as never,
-        params: { username: currentProfile },
+        params: { username: currentProfile, profileId: userProfile?.$id },
       });
     }
   };
@@ -58,7 +105,7 @@ export default function PinPad() {
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }} className="bg-background px-6">
         <View className="items-center mb-29">
           <Text className="text-4xl font-heading mb-2">Cafe Uno</Text>
-          <Text className="text-sm text-neutral-400 font-medium">Enter your Pin</Text>
+          <Text className="text-sm text-neutral-400 font-medium">Authentication Success</Text>
         </View>
 
         <View className="items-center mb-16 mt-12">
@@ -68,7 +115,7 @@ export default function PinPad() {
 
           <Text className="text-2xl font-bold text-neutral-900 mb-1">Signed In</Text>
           <Text className="text-base text-neutral-800 font-medium">
-            Welcome back, {currentProfile || "Maria"}.
+            Welcome back, {currentProfile || "User"}.
           </Text>
         </View>
 
@@ -93,12 +140,17 @@ export default function PinPad() {
         </TouchableOpacity>
       </View>
 
-      <View className="flex-row gap-3 mb-12">
-        <View className={`w-3.5 h-3.5 rounded-full ${pin.length > 0 ? "bg-textPrimary" : "bg-neutral-300"}`} />
-        <View className={`w-3.5 h-3.5 rounded-full ${pin.length > 1 ? "bg-textPrimary" : "bg-neutral-300"}`} />
-        <View className={`w-3.5 h-3.5 rounded-full ${pin.length > 2 ? "bg-textPrimary" : "bg-neutral-300"}`} />
-        <View className={`w-3.5 h-3.5 rounded-full ${pin.length > 3 ? "bg-textPrimary" : "bg-neutral-300"}`} />
-      </View>
+      {isLoading ? (
+        <ActivityIndicator color="#171717" size="small" className="mb-12" />
+      ) : (
+        /* PIN Dot Indicators */
+        <View className="flex-row gap-3 mb-12">
+          <View className={`w-3.5 h-3.5 rounded-full ${pin.length > 0 ? "bg-textPrimary" : "bg-neutral-300"}`} />
+          <View className={`w-3.5 h-3.5 rounded-full ${pin.length > 1 ? "bg-textPrimary" : "bg-neutral-300"}`} />
+          <View className={`w-3.5 h-3.5 rounded-full ${pin.length > 2 ? "bg-textPrimary" : "bg-neutral-300"}`} />
+          <View className={`w-3.5 h-3.5 rounded-full ${pin.length > 3 ? "bg-textPrimary" : "bg-neutral-300"}`} />
+        </View>
+      )}
 
       <View className="w-full max-w-[280px] gap-y-3">
         <View className="flex-row justify-between">
