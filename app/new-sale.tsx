@@ -1,16 +1,39 @@
-import React, { useState } from "react";
-import { Text, View, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from "react-native";
+import React, { useState, useEffect } from "react";
+import {Alert} from "react-native";
+import { Text, View, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
 import { router, useLocalSearchParams, Stack } from "expo-router";
+import { Models, ID, Query } from "react-native-appwrite";
+import { databases } from '../services/appwrite';
+import { useGlobalProfiles } from "./_layout";
+
 
 // Blueprints for your local cart entries
+interface MenuItem extends Models.Document {
+  item_name: string;
+  price: number;
+  category: string;
+}
+
+// Blueprints for local cart entries
 interface CartItem {
+  id: string;
   name: string;
   price: number;
   quantity: number;
 }
 
+const DATABASE_ID = '6a694ca9001b95d71b14'; 
+const MENU_COLLECTION_ID = 'menu_items';
+const RECIPES_COLLECTION_ID = "recipe";
+const SALE_COLLECTION_ID = "sales";
+const LOGS_COLLECTION_ID = "inventory_logs"; 
+const PRODUCTS_COLLECTION_ID = "products";
+
 export default function NewSale() {
   const { username } = useLocalSearchParams();
+
+  const { profiles} = useGlobalProfiles();
+  const currentProfile = profiles.find((p) => p.name === username);
 
   // Core layout tracking states
   const [activeCategory, setActiveCategory] = useState<"All" | "Drinks" | "Foods" | "Pastries">("All");
@@ -18,25 +41,40 @@ export default function NewSale() {
   const [cart, setCart] = useState<Record<string, CartItem>>({});
 
   // Clean menu dataset containing prices mapped as raw compute floats
-  const menuItems = [
-    { name: "Caramel Machiatto", price: 127.00, category: "Drinks" },
-    { name: "Sea Salt Latte", price: 176.00, category: "Drinks" },
-    { name: "Dirty Matcha", price: 130.00, category: "Drinks" },
-    { name: "Green Tea Latte", price: 106.00, category: "Drinks" },
-    { name: "Parmesan Fried Chicken", price: 99.00, category: "Foods" },
-    { name: "Croissant Waffle", price: 79.00, category: "Pastries" },
-    { name: "Ham & Cheese Sandwich", price: 89.00, category: "Foods" },
-    { name: "Buttered Pancake", price: 79.00, category: "Pastries" },
-  ];
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    fetchMenuItems();
+  }, []);
+
+  const fetchMenuItems = async () => {
+    try {
+      setIsLoading(true);
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        MENU_COLLECTION_ID
+      );
+      setMenuItems(response.documents as unknown as MenuItem[]);
+    } catch (error: any) {
+      console.error("Failed to fetch menu items from Appwrite:", error);
+      Alert.alert("Error Loading Menu", "Could not fetch menu items. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Append items to cart state on tap interaction
-  const handleAddItem = (item: typeof menuItems[0]) => {
+  const handleAddItem = (item: MenuItem) => {
+    const itemId = item.$id;
+
     setCart((prev) => {
-      const existing = prev[item.name];
+      const existing = prev[itemId];
       return {
         ...prev,
-        [item.name]: {
-          name: item.name,
+        [itemId]: {
+          id: itemId,
+          name: item.item_name,
           price: item.price,
           quantity: existing ? existing.quantity + 1 : 1,
         },
@@ -48,10 +86,96 @@ export default function NewSale() {
   const totalAmount = cartArray.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   // Auto handles category changes dynamically across layout
-  const filteredItems = menuItems.filter((item) => {
+  const filteredItems = menuItems.filter(({category}) => {
     if (activeCategory === "All") return true;
-    return item.category === activeCategory;
+    return category?.toLowerCase() === activeCategory.toLowerCase();
   });
+
+  const handleChargeOrder = async () => {
+    if (cartArray.length === 0) return;
+
+    setIsLoading(true);
+
+    try {
+      // 1. Process recipe inventory deductions for each item in the cart
+      for (const item of cartArray) {
+        // Fetch the recipe ingredients needed for this menu item
+        const recipeRes = await databases.listDocuments(
+          DATABASE_ID,
+          RECIPES_COLLECTION_ID,
+          [Query.equal("menu_items_Id", item.id)]
+        );
+
+        // Loop through each ingredient in the recipe and deduct stock
+        for (const recipeIngredient of recipeRes.documents) {
+          const productId = recipeIngredient.products_id?.$id || recipeIngredient.products_id;
+          const amountPerOrder = Number(recipeIngredient.amount || 0);
+          const totalDeduction = amountPerOrder * item.quantity; // Scale by ordered cart quantity
+
+          if (productId && totalDeduction > 0) {
+            // Fetch current live product document to get current stock balance
+            const productDoc = await databases.getDocument(
+              DATABASE_ID,
+              PRODUCTS_COLLECTION_ID,
+              productId
+            );
+
+            const currentStock = Number(productDoc.quantity || 0);
+            const newStock = Math.max(0, currentStock - totalDeduction);
+
+            // Update new stock balance in products collection
+            await databases.updateDocument(
+              DATABASE_ID,
+              PRODUCTS_COLLECTION_ID,
+              productId,
+              { quantity: newStock }
+            );
+
+            // Create audit trail in inventory_logs
+            await databases.createDocument(
+              DATABASE_ID,
+              LOGS_COLLECTION_ID,
+              ID.unique(),
+              {
+                products_id: productId,
+                action_type: "Sale",
+                quantity_changed: -totalDeduction, // Negative delta for sales
+                note: `Automated order deduction: ${item.quantity}x ${item.name}`,
+              }
+            );
+          }
+        }
+      }
+
+      // 2. Create the final Sale record in `sales` collection
+      const itemsSummary = cartArray
+        .map((item) => `${item.quantity}x ${item.name}`)
+        .join(", ");
+
+      await databases.createDocument(
+        DATABASE_ID,
+        SALE_COLLECTION_ID,
+        ID.unique(),
+        {
+          total_price: totalAmount,
+          items_summary: itemsSummary,
+          profiles_id: currentProfile?.$id || undefined,
+        }
+      );
+
+      Alert.alert("Sale Complete!", `Successfully charged PHP ${totalAmount.toFixed(2)}`);
+
+      // 3. Clear cart and refresh menu
+      setCart({});
+      fetchMenuItems();
+    } catch (error: any) {
+      console.error("Failed to complete sale & deduct stock:", error);
+      Alert.alert("Transaction Error", error?.message || "Could not process order deduction.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
 
   return (
     <View style={{ flex: 1 }} className="bg-background pt-16">
@@ -67,7 +191,7 @@ export default function NewSale() {
           </Text>
 
           {/* STAFF CONDITION GUARD: Menu button strictly stays hidden if owner (Kate) logs in */}
-          {username !== "Kate" && (
+          {currentProfile?.role !== "owner" && (
             <TouchableOpacity
               onPress={() => setShowSidebar(true)}
               className="p-2 bg-neutral-200/60 rounded-xl active:bg-neutral-300"
@@ -96,34 +220,48 @@ export default function NewSale() {
           })}
         </View>
 
-        {/* Dynamic Menu Items Grid */}
-        <View className="flex-row flex-wrap justify-between gap-y-4">
-          {filteredItems.map((item, index) => {
-            // Newline typography wrapper breaks to handle text grid alignment formatting
-            const parsedName = item.name.replace("Fried ", "Fried\n").replace("Cheese ", "Cheese\n").replace("Tea ", "Tea\n");
-            return (
-              <TouchableOpacity
-                key={index}
-                onPress={() => handleAddItem(item)}
-                className="w-[48%] h-28 bg-white border border-neutral-900 rounded-2xl p-4 justify-between active:bg-neutral-50"
-              >
-                <Text className="text-base text-textPrimary font-bodyBold leading-tight">
-                  {parsedName}
-                </Text>
-                <Text className="text-sm text-textPrimary-400 font-body">
-                  P{item.price.toFixed(2)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {/* Dynamic Menu Items Grid / Loader */}
+        {isLoading ? (
+          <View className="py-20 items-center justify-center">
+            <ActivityIndicator size="large" color="#171717" />
+            <Text className="text-sm font-body text-neutral-500 mt-3">Loading menu items...</Text>
+          </View>
+        ) : filteredItems.length === 0 ? (
+          <View className="py-20 items-center justify-center">
+            <Text className="text-base font-body text-neutral-500">No items found in this category.</Text>
+          </View>
+        ) : (
+          <View className="flex-row flex-wrap justify-between gap-y-4">
+            {filteredItems.map((item) => {
+              const parsedName = (item.item_name || "")
+                .replace("Fried ", "Fried\n")
+                .replace("Cheese ", "Cheese\n")
+                .replace("Tea ", "Tea\n");
+
+              return (
+                <TouchableOpacity
+                  key={item.$id}
+                  onPress={() => handleAddItem(item)}
+                  className="w-[48%] h-28 bg-white border border-neutral-900 rounded-2xl p-4 justify-between active:bg-neutral-50"
+                >
+                  <Text className="text-base text-textPrimary font-bodyBold leading-tight" numberOfLines={2}>
+                    {parsedName}
+                  </Text>
+                  <Text className="text-sm text-textPrimary-400 font-body">
+                    P{Number(item.price || 0).toFixed(2)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
 
       {/* Persistent Bottom Checkout Summary Panel */}
       <View className="absolute bottom-0 left-0 right-0 bg-neutral-200/95 rounded-t-[32px] p-6 pb-10 border-t border-neutral-300">
         <View className="flex-row justify-between items-center mb-2">
           <Text className="text-md text-neutral-800 font-bodyBold">
-            Order - rung up by {username || "Staff member"}
+            Order - rung up by {username || "Staff"}
           </Text>
           <TouchableOpacity onPress={() => setCart({})}>
             <Text className="text-sm text-neutral-500 font-body underline">Cancel</Text>
@@ -155,14 +293,21 @@ export default function NewSale() {
         </View>
 
         <TouchableOpacity
-          disabled={cartArray.length === 0}
-          onPress={() => alert(`Charging PHP ${totalAmount.toFixed(2)}...`)}
-          className={`w-full py-4 rounded-xl items-center shadow-sm ${cartArray.length === 0 ? "bg-neutral-400 opacity-60" : "bg-accent active:opacity-90"
-            }`}
+          disabled={cartArray.length === 0 || isLoading}
+          onPress={handleChargeOrder}
+          className={`w-full py-4 rounded-xl items-center shadow-sm ${
+            cartArray.length === 0 || isLoading
+              ? "bg-neutral-400 opacity-60"
+              : "bg-accent active:opacity-90"
+          }`}
         >
-          <Text className="text-white text-base font-bodyBold">
-            Charge
-          </Text>
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text className="text-white text-base font-bodyBold">
+              Charge
+            </Text>
+          )}
         </TouchableOpacity>
 
         {/* Bottom context router helper to return to dashboard strictly for Kate */}

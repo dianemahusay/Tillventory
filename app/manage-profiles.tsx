@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useGlobalProfiles } from "./_layout";
 
 export default function ManageProfilesScreen() {
@@ -9,11 +9,13 @@ export default function ManageProfilesScreen() {
   // Local state inputs for constructing brand new staff entries
   const [newName, setNewName] = useState("");
   const [newPin, setNewPin] = useState("");
+  const [role, setRole] = useState<"staff" | "owner">("staff");
   
   // Available color choices for new profile cards
   const colorPalette = ["#8C5E3C", "#6B5B95", "#3B5998", "#D9534F", "#F0AD4E"];
   const [selectedColor, setSelectedColor] = useState("#3B5998");
 
+  //CREATE PFP Trigger
   const handleCreateProfile = () => {
     if (!newName || newPin.length !== 4) {
       alert("Please provide a valid employee name and a 4-digit passcode PIN.");
@@ -24,12 +26,27 @@ export default function ManageProfilesScreen() {
       name: newName,
       pin: newPin,
       color: selectedColor,
+      role: role,
     });
 
     // Reset input fields on success closure
     setNewName("");
     setNewPin("");
     alert(`${newName} successfully added to the staff login list!`);
+  };  
+
+  //DELETE PFP Trigger
+  const handleDeleteProfile = (identifier: string, name?: string) => {
+    const displayName = name?.trim() ? name : "this profile";
+    
+    Alert.alert("Remove Profile", `Remove ${displayName}?`, [
+      { text: "Cancel", style: "cancel" },
+      { 
+        text: "Remove", 
+        style: "destructive", 
+        onPress: () => deleteProfile(identifier) // Calls context function from _layout.tsx
+      }
+    ]);
   };
 
   return (
@@ -44,33 +61,38 @@ export default function ManageProfilesScreen() {
 
         {/* Dynamic Staff Profile Cards Roster Feed List */}
         <View className="gap-y-3 mb-8">
-          {profiles.map((profile) => (
-            <View 
-              key={profile.name} 
-              className="w-full bg-white border border-neutral-200 p-4 rounded-xl flex-row justify-between items-center shadow-sm"
-            >
-              <View className="flex-row items-center gap-x-3">
-                {/* Visual Color Thumbnail Chip Indicator */}
-                <View style={{ backgroundColor: profile.color }} className="w-5 h-5 rounded-full" />
-                <View>
-                  <Text className="text-base font-bodyBold text-neutral-900">{profile.name}</Text>
-                  <Text className="text-xs font-body text-neutral-400">Passcode PIN: ****</Text>
-                </View>
-              </View>
+          {profiles.map((profile) => {
+            // Support both standard id and Appwrite $id
+            const profileId = profile.$id;
 
-              {/* Trash/Delete Option (Safely hides button on master owner file) */}
-              {profile.name !== "Kate" ? (
-                <TouchableOpacity 
-                  onPress={() => deleteProfile(profile.name)}
-                  className="px-3 py-2 bg-red-50 rounded-lg active:opacity-60"
-                >
-                  <Text className="text-red-600 text-sm font-bodyBold">Remove 🗑️</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text className="text-xs font-body text-neutral-400 italic px-2">Master Owner</Text>
-              )}
-            </View>
-          ))}
+            return (
+              <View 
+                key={profileId || profile.name} 
+                className="w-full bg-white border border-neutral-200 p-4 rounded-xl flex-row justify-between items-center shadow-sm"
+              >
+                <View className="flex-row items-center gap-x-3">
+                  {/* Visual Color Thumbnail Chip Indicator */}
+                  <View style={{ backgroundColor: profile.color }} className="w-5 h-5 rounded-full" />
+                  <View>
+                    <Text className="text-base font-bodyBold text-neutral-900">{profile.name}</Text>
+                    <Text className="text-xs font-body text-neutral-400">Passcode PIN: ****</Text>
+                  </View>
+                </View>
+
+                {/* Trash/Delete Option (Safely hides button on master owner file) */}
+                {profile.name !== "Kate" ? (
+                  <TouchableOpacity 
+                    onPress={() => handleDeleteProfile(profileId, profile.name)}
+                    className="px-3 py-2 bg-red-50 rounded-lg active:opacity-60"
+                  >
+                    <Text className="text-red-600 text-sm font-bodyBold">Remove 🗑️</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text className="text-xs font-body text-neutral-400 italic px-2">Master Owner</Text>
+                )}
+              </View>
+            );
+          })}
         </View>
 
         {/* Back Navigation Return Trigger link */}

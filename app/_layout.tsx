@@ -1,23 +1,31 @@
-import { useCallback, createContext, useState, useContext } from 'react';
+import { useCallback, createContext, useState, useContext, useEffect } from 'react';
 import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, Fraunces_600SemiBold } from '@expo-google-fonts/fraunces';
 import { Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { databases } from '../services/appwrite';
+import { ID } from 'react-native-appwrite';
+
 
 import './global.css';
 
+const DATABASE_ID = '6a694ca9001b95d71b14'; 
+const PROFILES_COLLECTION_ID = 'profiles'; 
+
 // 1. Structure blueprints for global staff profiles data arrays
 export interface Profile {
+  $id?: string;
   name: string;
   pin: string;
   color: string;
+  role: "staff" | "owner";
 }
 
 interface ProfileContextType {
   profiles: Profile[];
-  addProfile: (profile: Profile) => void;
-  deleteProfile: (name: string) => void;
+  addProfile: (profile: Omit<Profile, '$id'>) => Promise<void>;
+  deleteProfile: (name: string) => Promise<void>; 
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
@@ -38,20 +46,65 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
-  // 2. Main reactive database tracker tracking active staff list rosters
-  const [profiles, setProfiles] = useState<Profile[]>([
-    { name: "Maria", pin: "1111", color: "#8C5E3C" },
-    { name: "Tomas", pin: "2222", color: "#6B5B95" },
-    { name: "Kate", pin: "8888", color: "#4A6449" }, // Master Owner Profile
-  ]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
 
-  const addProfile = (newProfile: Profile) => {
-    setProfiles((prev) => [...prev, newProfile]);
+  // READ (Fetch Profiles)
+  const fetchProfiles = async () => {
+    try {
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        PROFILES_COLLECTION_ID
+      );
+
+      const fetchedProfiles: Profile[] = response.documents.map((doc) => ({
+        $id: doc.$id,
+        name: doc.name,
+        pin: doc.pin,
+        color: doc.color,
+        role: doc.role,
+      }));
+
+      setProfiles(fetchedProfiles);
+    } catch (error) {
+      console.error('Failed to fetch profiles from Appwrite:', error);
+    }
   };
 
-  const deleteProfile = (name: string) => {
-    if (name === "Kate") return; // Safety lock gate: Owner cannot be deleted
-    setProfiles((prev) => prev.filter((p) => p.name !== name));
+  useEffect(() => {
+    fetchProfiles();
+  }, []);
+
+  // CREATE (Add Profile)
+  const addProfile = async (newProfile: Omit<Profile, '$id'>) => {
+    try {
+      const doc = await databases.createDocument(
+        DATABASE_ID,
+        PROFILES_COLLECTION_ID,
+        ID.unique(),
+        newProfile
+      );
+      setProfiles((prev) => [...prev, { ...newProfile, $id: doc.$id }]);
+    } catch (error) {
+      console.error('Failed to create profile:', error);
+    }
+  };
+
+  // 3. Delete profile from Appwrite & local state
+  const deleteProfile = async (profileId: string) => {
+    const target = profiles.find((p) => p.$id === profileId);
+    if (!target || !target.$id) return;
+    if (target.role === 'owner') return;
+
+    try {
+      await databases.deleteDocument(
+        DATABASE_ID,
+        PROFILES_COLLECTION_ID,
+        profileId
+      );
+      setProfiles((prev) => prev.filter((p) => p.$id === profileId));
+    } catch (error) {
+      console.error('Failed to delete profile:', error);
+    }
   };
 
   const onLayoutRootView = useCallback(async () => {
