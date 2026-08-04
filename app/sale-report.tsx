@@ -165,7 +165,6 @@ export default function SalesReportScreen() {
           </View>
         )}
 
-        {/* Back Link */}
         <TouchableOpacity onPress={() => router.replace("/owner-dash")} className="mt-10 self-center">
           <Text className="text-sm text-neutral-400 font-bodySemiBold underline">
             Back to Dashboard

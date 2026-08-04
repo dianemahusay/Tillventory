@@ -147,7 +147,7 @@ export const fetchCombinedActivities = async (options?: {
       })
     );
 
-    // 2. Format Restock entries (filtering out raw ingredient deductions)
+    // 2. Format Restock entries (Filtering out sales & negative deductions)
     const restockLogs = logsRes.documents.filter((doc: any) => {
       const action = (doc.action_type || doc.type || "").toLowerCase();
       const note = (doc.note || doc.title || "").toLowerCase();

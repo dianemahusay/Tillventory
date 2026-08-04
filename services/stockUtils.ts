@@ -30,8 +30,16 @@ export const filterLowStockProducts = (products: ProductItem[]): ProductItem[] =
 };
 
 export const renderStockText = (item: ProductItem): string => {
-  const displayUnit = item.restock_unit || item.unit || "";
-  const qty = item.quantity || 0;
+  const currentQty = Number(item.quantity || 0);
+  const restockUnit = item.restock_unit || item.unit || "";
 
-  return `${qty} ${displayUnit} left`;
+  let displayQty = Math.floor(currentQty);
+
+  // If you want to decrement when the decimal portion is <= 0.5:
+  const decimalPart = currentQty % 1;
+  if (decimalPart > 0 && decimalPart <= 0.05) {
+    displayQty = Math.max(0, Math.floor(currentQty) - 1);
+  }
+
+  return `${displayQty} ${restockUnit} left`;
 };

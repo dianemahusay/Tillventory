@@ -119,38 +119,44 @@ export default function NewSale() {
         // Loop through each ingredient in the recipe and deduct stock
         for (const recipeIngredient of recipeRes.documents) {
           const productId = recipeIngredient.products_id?.$id || recipeIngredient.products_id;
-          const amountPerOrder = Number(recipeIngredient.amount || 0);
-          const totalDeduction = amountPerOrder * item.quantity; // Scale by ordered cart quantity
+          const amountPerOrder = Number(recipeIngredient.amount || 0); // e.g. 2 shots
+          const totalShotsNeeded = amountPerOrder * item.quantity;
 
-          if (productId && totalDeduction > 0) {
-            // Fetch current live product document to get current stock balance
+          if (productId && totalShotsNeeded > 0) {
+            // 1. Fetch the product document
             const productDoc = await databases.getDocument(
               DATABASE_ID,
               PRODUCTS_COLLECTION_ID,
               productId
             );
 
-            const currentStock = Number(productDoc.quantity || 0);
-            const newStock = Math.max(0, currentStock - totalDeduction);
+            const currentStockJars = Number(productDoc.quantity || 0); // e.g. 1 jar
+            const conversionFactor = Number(productDoc.conversion_factor) || 1; // e.g. 50 shots per jar
 
-            // Update new stock balance in products collection
+            // 2. Convert shots needed into fraction of a Jar
+            const jarDeduction = totalShotsNeeded / conversionFactor; // 2 / 50 = 0.04 jars
+
+            // 3. Subtract jar fraction from jar quantity
+            const newStockJars = Math.max(0, currentStockJars - jarDeduction); // 1 - 0.04 = 0.96 jars
+
+            // 4. Update the product stock in Appwrite
             await databases.updateDocument(
               DATABASE_ID,
               PRODUCTS_COLLECTION_ID,
               productId,
-              { quantity: newStock }
+              { quantity: newStockJars }
             );
 
-            // Create audit trail in inventory_logs
+            // 5. Create log entry
             await databases.createDocument(
               DATABASE_ID,
               LOGS_COLLECTION_ID,
               ID.unique(),
               {
                 products_id: productId,
-                action_type: "Sale",
-                quantity_changed: -totalDeduction, // Negative delta for sales
-                note: `${displayName}: Automated order deduction: ${item.quantity}x ${item.name}`,
+                action_type: "deduction",
+                quantity_changed: -jarDeduction,
+                note: `Order deduction: ${item.quantity}x ${item.name} (-${totalShotsNeeded} shots)`,
               }
             );
           }
@@ -276,7 +282,7 @@ export default function NewSale() {
       <View className="absolute bottom-0 left-0 right-0 bg-neutral-200/95 rounded-t-[32px] p-6 pb-10 border-t border-neutral-300">
         <View className="flex-row justify-between items-center mb-2">
           <Text className="text-md text-neutral-800 font-bodyBold">
-            Order - rung up by {displayName}
+            Order - rung up by {username || "Kate"}
           </Text>
           <TouchableOpacity onPress={() => setCart({})}>
             <Text className="text-sm text-neutral-500 font-body underline">Cancel</Text>

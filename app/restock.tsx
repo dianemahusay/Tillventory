@@ -108,7 +108,7 @@ export default function RestockScreen() {
     const isSmallUnit = ["tbsp", "tsp", "shot", "pcs"].includes(unit);
     
     // Set threshold to 3 for tbsp/tsp/shot, otherwise default to 5
-    const threshold = isSmallUnit ? 2 : 4;
+    const threshold = isSmallUnit ? 1 : 4;
 
     return qty <= threshold;
   }).length;
@@ -121,7 +121,7 @@ export default function RestockScreen() {
     }
 
     const qtyNum = parseFloat(quantity);
-    if (isNaN(qtyNum) || qtyNum <= 0) {
+    if (isNaN(qtyNum) || (selectedType !== "Correct_count" && qtyNum <= 0) || qtyNum < 0) {
       Alert.alert("Error", "Please enter a valid quantity.");
       return;
     }
