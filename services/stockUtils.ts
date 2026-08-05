@@ -19,7 +19,7 @@ export const isProductLowStock = (product: ProductItem): boolean => {
   // 1. Identify unit type to determine fallback threshold
   const unit = (product.unit || "").trim().toLowerCase();
   const isSmallUnit = ["tbsp", "tbps", "tsp", "shot", "pcs"].includes(unit);
-  const threshold = isSmallUnit ? 1 : 4;
+  const threshold = isSmallUnit ? 1 : 3;
 
   // 2. Return true if current quantity is at or below threshold
   return currentQty <= threshold;
@@ -33,13 +33,8 @@ export const renderStockText = (item: ProductItem): string => {
   const currentQty = Number(item.quantity || 0);
   const restockUnit = item.restock_unit || item.unit || "";
 
-  let displayQty = Math.floor(currentQty);
-
-  // If you want to decrement when the decimal portion is <= 0.5:
-  const decimalPart = currentQty % 1;
-  if (decimalPart > 0 && decimalPart <= 0.05) {
-    displayQty = Math.max(0, Math.floor(currentQty) - 1);
-  }
+  // Math.ceil rounds UP if there's any fraction left (e.g., 0.764 -> 1, 1.2 -> 2)
+  const displayQty = currentQty > 0 ? Math.ceil(currentQty) : 0;
 
   return `${displayQty} ${restockUnit} left`;
 };

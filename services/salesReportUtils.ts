@@ -5,6 +5,7 @@ import { databases } from "./appwrite";
 const DATABASE_ID = "6a694ca9001b95d71b14";
 const SALE_COLLECTION_ID = "sales";
 const PRODUCTS_COLLECTION_ID = "products";
+const LOGS_COLLECTION_ID = "inventory_logs";
 
 export type TimeframePeriod = "week" | "month";
 
@@ -27,11 +28,8 @@ export const getSalesReportDates = (period: TimeframePeriod) => {
   const startDate = new Date();
 
   if (period === "week") {
-    // 💡 DAILY MODE: Start strictly at Midnight TODAY (00:00:00)
-    // This accumulates today's sales continuously and resets at 12:00 AM midnight.
     startDate.setHours(0, 0, 0, 0);
   } else if (period === "month") {
-    // 💡 MONTHLY MODE: Look back across the past 30 days
     startDate.setDate(now.getDate() - 30);
     startDate.setHours(0, 0, 0, 0);
   }
@@ -48,8 +46,6 @@ export const fetchSalesReport = async (
   try {
     const { startDate, endDate } = getSalesReportDates(period);
 
-    // If in Weekly (Daily) mode, fetch the last 7 days of sales for the "Net Profit per Day" breakdown list
-    // but filter today's top cards strictly for today's continuous totals!
     const breakdownStartDate = new Date();
     if (period === "week") {
       breakdownStartDate.setDate(breakdownStartDate.getDate() - 6);
@@ -59,7 +55,7 @@ export const fetchSalesReport = async (
       breakdownStartDate.setHours(0, 0, 0, 0);
     }
 
-    const [salesRes, productsRes] = await Promise.all([
+    const [salesRes, productsRes, logsRes] = await Promise.all([
       databases.listDocuments(DATABASE_ID, SALE_COLLECTION_ID, [
         Query.greaterThanEqual("$createdAt", breakdownStartDate.toISOString()),
         Query.lessThanEqual("$createdAt", endDate),
@@ -67,62 +63,79 @@ export const fetchSalesReport = async (
         Query.limit(500),
       ]),
       databases.listDocuments(DATABASE_ID, PRODUCTS_COLLECTION_ID),
+      databases.listDocuments(DATABASE_ID, LOGS_COLLECTION_ID, [
+        Query.greaterThanEqual("$createdAt", breakdownStartDate.toISOString()),
+        Query.lessThanEqual("$createdAt", endDate),
+        Query.equal("action_type", "Sale"),
+        Query.limit(500),
+      ]),
     ]);
 
-    // Map product IDs to base unit cost
+    // 1. Map Base Unit Costs (cost / conversion_factor)
     const baseUnitCostMap: Record<string, number> = {};
     productsRes.documents.forEach((doc: any) => {
-      const packageCost = Number(doc.unit_cost || 0);
+      const packageCost = Number(doc.cost || doc.unit_cost || 0);
       const conversionRate = Number(doc.conversion_factor) || 1;
       baseUnitCostMap[doc.$id] = packageCost / conversionRate;
     });
 
-    const salesDocs = salesRes.documents;
-
-    let grossRevenue = 0;
-    let totalCOGS = 0;
-    let totalOrders = 0;
-
-    const breakdownMap: Record<string, { revenue: number; cogs: number }> = {};
+    // 2. Sum actual log deductions per sale date
+    const dailyCogsMap: Record<string, number> = {};
+    let periodTotalCOGS = 0;
     const todayMidnight = new Date();
     todayMidnight.setHours(0, 0, 0, 0);
+
+    logsRes.documents.forEach((log: any) => {
+      const pId = typeof log.products_id === "object" ? log.products_id?.$id : log.products_id;
+      const baseUnitsUsed = Math.abs(Number(log.quantity_changed || 0));
+      const baseCost = baseUnitCostMap[pId] || 0;
+      const logCogs = baseUnitsUsed * baseCost;
+
+      const logDate = new Date(log.$createdAt);
+      let dateKey = "";
+      if (period === "week") {
+        dateKey = logDate.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        });
+      } else {
+        const dayOfMonth = logDate.getDate();
+        const weekNum = Math.ceil(dayOfMonth / 7);
+        dateKey = `Week ${weekNum}`;
+      }
+
+      dailyCogsMap[dateKey] = (dailyCogsMap[dateKey] || 0) + logCogs;
+
+      // Filter COGS for active period
+      if (period === "week") {
+        if (logDate >= todayMidnight) {
+          periodTotalCOGS += logCogs;
+        }
+      } else {
+        periodTotalCOGS += logCogs;
+      }
+    });
+
+    const salesDocs = salesRes.documents;
+    let grossRevenue = 0;
+    let totalOrders = 0;
+    const breakdownMap: Record<string, { revenue: number }> = {};
 
     salesDocs.forEach((sale: any) => {
       const saleDate = new Date(sale.$createdAt);
       const saleTotal = Number(sale.total_price || sale.total || 0);
 
-      let saleCOGS = 0;
-      if (Array.isArray(sale.items)) {
-        sale.items.forEach((item: any) => {
-          const pId = item.productId || item.product_id;
-          const costPerUnit = baseUnitCostMap[pId] || 0;
-          const qtyUsed = Number(item.qty || item.quantity || 1);
-          saleCOGS += costPerUnit * qtyUsed;
-        });
-      } else if (sale.cogs && Number(sale.cogs) > 0) {
-        saleCOGS += Number(sale.cogs);
-      }
-
-      if (saleCOGS === 0 && saleTotal > 0) {
-        saleCOGS = saleTotal * 0.35;
-      }
-
-      // 1. TOP CARDS CALCULATION:
-      // If Weekly toggle is selected, ONLY sum transactions created TODAY (>= todayMidnight)
       if (period === "week") {
         if (saleDate >= todayMidnight) {
           grossRevenue += saleTotal;
-          totalCOGS += saleCOGS;
           totalOrders += 1;
         }
       } else {
-        // Monthly view sums all past 30 days
         grossRevenue += saleTotal;
-        totalCOGS += saleCOGS;
         totalOrders += 1;
       }
 
-      // 2. BREAKDOWN LIST CALCULATION:
       let bucketLabel = "";
       if (period === "week") {
         bucketLabel = saleDate.toLocaleDateString("en-US", {
@@ -137,27 +150,27 @@ export const fetchSalesReport = async (
       }
 
       if (!breakdownMap[bucketLabel]) {
-        breakdownMap[bucketLabel] = { revenue: 0, cogs: 0 };
+        breakdownMap[bucketLabel] = { revenue: 0 };
       }
 
       breakdownMap[bucketLabel].revenue += saleTotal;
-      breakdownMap[bucketLabel].cogs += saleCOGS;
     });
 
-    const netProfit = grossRevenue - totalCOGS;
+    const netProfit = grossRevenue - periodTotalCOGS;
     const profitMarginPercent = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
 
     const breakdown: ProfitBreakdownItem[] = Object.keys(breakdownMap).map((label) => {
-      const item = breakdownMap[label];
+      const rev = breakdownMap[label].revenue;
+      const cogs = dailyCogsMap[label] || 0;
       return {
         label,
-        netProfit: item.revenue - item.cogs,
+        netProfit: rev - cogs,
       };
     });
 
     return {
       grossRevenue,
-      totalCOGS,
+      totalCOGS: periodTotalCOGS,
       netProfit,
       profitMarginPercent,
       totalOrders,

@@ -35,9 +35,10 @@ export default function InventoryReportScreen() {
     if (count <= 0) {
       return <Text className="text-sm font-body text-neutral-400">—</Text>;
     }
+    const formattedCount = Number(count.toFixed(2));
     return (
       <Text className="text-sm font-bodyBold text-green-600">
-        +{count} {unit}
+        +{formattedCount} {unit}
       </Text>
     );
   };
@@ -46,9 +47,10 @@ export default function InventoryReportScreen() {
     if (count <= 0) {
       return <Text className="text-sm font-body text-neutral-400">—</Text>;
     }
+    const formattedCount = Number(count.toFixed(2));
     return (
       <Text className="text-sm font-bodyBold text-red-500">
-        -{count} {unit}
+        -{formattedCount} {unit}
       </Text>
     );
   };
@@ -61,9 +63,10 @@ export default function InventoryReportScreen() {
         </Text>
       );
     }
+    const formattedCount = Number(count.toFixed(2));
     return (
       <Text className="text-sm font-bodyBold text-neutral-900">
-        {count} {unit}
+        {formattedCount} {unit}
       </Text>
     );
   };
@@ -153,7 +156,12 @@ export default function InventoryReportScreen() {
                   {/* In Stock Column */}
                   <View className="items-center flex-1">
                     <Text className="text-xs font-body text-neutral-400 mb-0.5">In Stock</Text>
-                    {renderCurrentStockText(item.currentStock, item.unit)}
+                    <Text className="text-sm font-bodyBold text-neutral-900">
+                      {Number(item.currentStock.toFixed(2))} {item.restockUnit}
+                    </Text>
+                    <Text className="text-[10px] font-body text-neutral-500">
+                      ({item.continuingStock} {item.unit})
+                    </Text>
                   </View>
                 </View>
               </View>

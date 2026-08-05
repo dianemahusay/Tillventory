@@ -109,13 +109,13 @@ export default function ShiftActivityScreen() {
                   </Text>
                 </View>
               </View>
-            ))
+            ))  
           )}
         </View>
 
         {/* Action Link Close Button */}
         <TouchableOpacity 
-          onPress={() => router.back()}
+          onPress={() => router.replace("/new-sale")}
           className="mt-12 self-center"
         >
           <Text className="text-sm text-neutral-400 font-bodySemiBold underline">

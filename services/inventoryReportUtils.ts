@@ -13,6 +13,8 @@ export interface InventoryReportItem {
   totalRestocked: number;
   totalUsed: number;
   currentStock: number;
+  continuingStock: number;
+  conversionFactor: number;
 }
 
 export type TimeframePeriod = "week" | "month";
@@ -25,11 +27,9 @@ export const getPeriodDates = (period: TimeframePeriod) => {
   const startDate = new Date();
 
   if (period === "week") {
-    // Start of current week (7 days ago)
     startDate.setDate(now.getDate() - 7);
   } else if (period === "month") {
-    // Start of current month (1st of this month at 00:00:00)
-   startDate.setDate(now.getDate() - 30);
+    startDate.setDate(now.getDate() - 30);
   }
 
   return {
@@ -64,11 +64,13 @@ export const fetchInventoryReport = async (
       ]
     );
 
-    // 3. Aggregate restocks and usage per product ID
-    const reportMap: Record<string, { restocked: number; used: number }> = {};
+    // 3. Explicitly type reportMap with restockedPackages & baseUnitsUsed
+    const reportMap: Record<
+      string,
+      { restockedPackages: number; baseUnitsUsed: number }
+    > = {};
 
     logsRes.documents.forEach((log: any) => {
-      // Get target product ID (handles both nested relation objects or raw ID strings)
       const pId =
         typeof log.products_id === "object"
           ? log.products_id?.$id
@@ -77,30 +79,34 @@ export const fetchInventoryReport = async (
       if (!pId) return;
 
       if (!reportMap[pId]) {
-        reportMap[pId] = { restocked: 0, used: 0 };
+        reportMap[pId] = { restockedPackages: 0, baseUnitsUsed: 0 };
       }
 
       const qty = Math.abs(Number(log.quantity_changed || log.qty_changed || 0));
       const action = (log.action_type || log.type || "").toLowerCase();
 
       if (action === "restock") {
-        reportMap[pId].restocked += qty;
+        reportMap[pId].restockedPackages += qty;
       } else if (action === "sale" || action === "deduction" || action === "waste") {
-        reportMap[pId].used += qty;
+        reportMap[pId].baseUnitsUsed += qty;
       }
     });
 
     // 4. Combine aggregated stats with registered products list
-    return productsRes.documents.map((pDoc: any) => {
-      const stats = reportMap[pDoc.$id] || { restocked: 0, used: 0 };
+    return productsRes.documents.map((pDoc: any): InventoryReportItem => {
+      const stats = reportMap[pDoc.$id] || { restockedPackages: 0, baseUnitsUsed: 0 };
+      const factor = Number(pDoc.conversion_factor) || 1;
+
       return {
         productId: pDoc.$id,
         productName: pDoc.product_name,
         unit: pDoc.unit || "unit",
         restockUnit: pDoc.restock_unit || pDoc.unit || "unit",
-        totalRestocked: stats.restocked,
-        totalUsed: stats.used,
+        totalRestocked: stats.restockedPackages,
+        totalUsed: stats.baseUnitsUsed,
         currentStock: Number(pDoc.quantity || 0),
+        continuingStock: Number(pDoc.continuing_stock || 0),
+        conversionFactor: factor,
       };
     });
   } catch (error) {

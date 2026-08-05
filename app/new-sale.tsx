@@ -5,7 +5,6 @@ import { ID, Models, Query } from "react-native-appwrite";
 import { databases } from '../services/appwrite';
 import { useGlobalProfiles } from "./_layout";
 
-
 // Blueprints for your local cart entries
 interface MenuItem extends Models.Document {
   item_name: string;
@@ -47,6 +46,9 @@ export default function NewSale() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Add state to store the inline banner message
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMenuItems();
@@ -119,44 +121,47 @@ export default function NewSale() {
         // Loop through each ingredient in the recipe and deduct stock
         for (const recipeIngredient of recipeRes.documents) {
           const productId = recipeIngredient.products_id?.$id || recipeIngredient.products_id;
-          const amountPerOrder = Number(recipeIngredient.amount || 0); // e.g. 2 shots
-          const totalShotsNeeded = amountPerOrder * item.quantity;
+          const amountPerOrder = Number(recipeIngredient.amount || 0); // e.g., 2 shots
+          const baseUnitsNeeded = amountPerOrder * item.quantity;      // 2 shots
 
-          if (productId && totalShotsNeeded > 0) {
-            // 1. Fetch the product document
+          if (productId && baseUnitsNeeded > 0) {
             const productDoc = await databases.getDocument(
               DATABASE_ID,
               PRODUCTS_COLLECTION_ID,
               productId
             );
 
-            const currentStockJars = Number(productDoc.quantity || 0); // e.g. 1 jar
-            const conversionFactor = Number(productDoc.conversion_factor) || 1; // e.g. 50 shots per jar
+            const currentBaseStock = Number(productDoc.continuing_stock || 0); // e.g., 50 shots
+            const factor = Number(productDoc.conversion_factor || 1);         // 50 shots/jar
 
-            // 2. Convert shots needed into fraction of a Jar
-            const jarDeduction = totalShotsNeeded / conversionFactor; // 2 / 50 = 0.04 jars
+            // 1. Deduct directly from continuing_stock
+            const newBaseStock = Math.max(0, currentBaseStock - baseUnitsNeeded); // 50 - 2 = 48 shots
 
-            // 3. Subtract jar fraction from jar quantity
-            const newStockJars = Math.max(0, currentStockJars - jarDeduction); // 1 - 0.04 = 0.96 jars
+            // 2. Keep package quantity in sync for displays
+            const newPackages = Number((newBaseStock / factor).toFixed(2));      // 48 / 50 = 0.96 jars
 
-            // 4. Update the product stock in Appwrite
+            // 3. Update both attributes in Appwrite
             await databases.updateDocument(
               DATABASE_ID,
               PRODUCTS_COLLECTION_ID,
               productId,
-              { quantity: newStockJars }
+              {
+                continuing_stock: newBaseStock,
+                quantity: newPackages,
+              }
             );
 
-            // 5. Create log entry
+            // 4. Log the base deduction
             await databases.createDocument(
               DATABASE_ID,
               LOGS_COLLECTION_ID,
               ID.unique(),
               {
                 products_id: productId,
-                action_type: "deduction",
-                quantity_changed: -jarDeduction,
-                note: `Order deduction: ${item.quantity}x ${item.name} (-${totalShotsNeeded} shots)`,
+                action_type: "Sale",
+                quantity_changed: -baseUnitsNeeded,
+                profiles_id: currentProfile?.$id || undefined,
+                note: `Order deduction: ${item.quantity}x ${item.name} (-${baseUnitsNeeded} ${productDoc.unit || "units"})`,
               }
             );
           }
@@ -176,15 +181,18 @@ export default function NewSale() {
           total_price: totalAmount,
           items_summary: itemsSummary,
           profiles_id: currentProfile?.$id || undefined,
-          profile_name: displayName,
-          staff_name: displayName,
         }
       );
 
-      Alert.alert("Sale Complete!", `Successfully charged PHP ${totalAmount.toFixed(2)}`);
-
-      // 3. Clear cart and refresh menu
+      const chargedAmount = totalAmount;
       setCart({});
+      
+      Alert.alert("Order Complete!", `Successfully charged PHP ${totalAmount.toFixed(2)}`);
+
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 3000);
+
       fetchMenuItems();
     } catch (error: any) {
       console.error("Failed to complete sale & deduct stock:", error);
@@ -211,7 +219,7 @@ export default function NewSale() {
             Cafe Uno
           </Text>
 
-          {/* STAFF CONDITION GUARD: Menu button strictly stays hidden if owner (Kate) logs in */}
+          {/* STAFF CONDITION GUARD: logs in */}
           {currentProfile?.role !== "owner" && (
             <TouchableOpacity
               onPress={() => setShowSidebar(true)}
@@ -282,7 +290,7 @@ export default function NewSale() {
       <View className="absolute bottom-0 left-0 right-0 bg-neutral-200/95 rounded-t-[32px] p-6 pb-10 border-t border-neutral-300">
         <View className="flex-row justify-between items-center mb-2">
           <Text className="text-md text-neutral-800 font-bodyBold">
-            Order - rung up by {username || "Kate"}
+            Order - rung up by {displayName}{currentProfile?.role ? ` (${currentProfile.role})` : ""}
           </Text>
           <TouchableOpacity onPress={() => setCart({})}>
             <Text className="text-sm text-neutral-500 font-body underline">Cancel</Text>
@@ -331,7 +339,6 @@ export default function NewSale() {
           )}
         </TouchableOpacity>
 
-        {/* Bottom context router helper to return to the owner dashboard for owner sessions */}
         {isOwnerSession && (
           <TouchableOpacity onPress={() => router.replace("/owner-dash")} className="mt-4 self-center">
             <Text className="text-xs text-neutral-400 font-bodySemiBold underline">Back to Dashboard</Text>

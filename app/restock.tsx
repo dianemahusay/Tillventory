@@ -13,6 +13,8 @@ const LOGS_COLLECTION_ID = "inventory_logs";
 export interface ProductItem extends Models.Document {
   product_name: string;
   quantity: number;
+  continuing_stock: number;
+  conversion_factor: number;
   unit: string;
   restock_unit: string;
 }
@@ -34,21 +36,20 @@ export default function RestockScreen() {
 
   const requestedName = typeof username === "string" ? username : "";
   const normalizedRequestedName = requestedName.trim().toLowerCase();
-  const currentProfile = profiles.find(
-    (profile: any) =>
-      (profile.name || "").trim().toLowerCase() === normalizedRequestedName
-  );
 
-  const profileName = currentProfile?.name?.trim() || requestedName.trim() || "Unknown";
+  const currentProfile = profiles.find((p: any) => {
+    const pName = (p.name || "").trim().toLowerCase();
+    return pName === normalizedRequestedName;
+  });
+
+  const profileName = currentProfile?.name || requestedName || "Owner";
 
   const [selectedType, setSelectedType] = useState<InventoryAction>("Restock");
   const [quantity, setQuantity] = useState<string>("");
-  const [restockUnit, setRestockUnit] = useState<string>("");
   const [expireDate, setExpireDate] = useState<string>("");
   const [note, setNote] = useState<string>("");
 
   const [productsList, setProductsList] = useState<ProductItem[]>([]);
-  const [recentLogs, setRecentLogs] = useState<InventoryLogDoc[]>([]);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -66,17 +67,8 @@ export default function RestockScreen() {
   const fetchScreenData = async () => {
     try {
       setIsLoading(true);
-      const [prodRes, logsRes] = await Promise.all([
-        databases.listDocuments(DATABASE_ID, PRODUCTS_COLLECTION_ID),
-        databases.listDocuments(DATABASE_ID, LOGS_COLLECTION_ID, [
-          Query.orderDesc("$createdAt"),
-          Query.limit(10),
-          Query.select(["*", "products_id.*"]), // Populates linked product object
-        ]),
-      ]);
-
+      const prodRes = await databases.listDocuments(DATABASE_ID, PRODUCTS_COLLECTION_ID);
       setProductsList(prodRes.documents as unknown as ProductItem[]);
-      setRecentLogs(logsRes.documents as unknown as InventoryLogDoc[]);
     } catch (error) {
       console.error("Error fetching restock data:", error);
       Alert.alert("Error", "Could not fetch data from Appwrite.");
@@ -91,11 +83,11 @@ export default function RestockScreen() {
     fetchScreenData();
   };
 
-  // 1. Calculate sum of quantities across all products (Tracked Stock)
-  const totalTrackedStock = productsList.reduce(
-    (sum, item) => sum + (Number(item.quantity) || 0),
-    0
-  );
+  // 1. Calculate sum of quantities across all products (Tracked Stock rounded UP to whole units)
+  const totalTrackedStock = productsList.reduce((sum, item) => {
+    const qty = Number(item.quantity) || 0;
+    return sum + Math.ceil(qty);
+  }, 0);
 
   // 2. Calculate number of products running low (e.g. quantity <= 5)
   const lowStockCount = productsList.filter((item) => {
@@ -108,7 +100,7 @@ export default function RestockScreen() {
     const isSmallUnit = ["tbsp", "tsp", "shot", "pcs"].includes(unit);
     
     // Set threshold to 3 for tbsp/tsp/shot, otherwise default to 5
-    const threshold = isSmallUnit ? 1 : 4;
+    const threshold = isSmallUnit ? 1 : 3;
 
     return qty <= threshold;
   }).length;
@@ -129,20 +121,31 @@ export default function RestockScreen() {
     setIsSubmitting(true);
 
     try {
-      let currentStock = Number(selectedProduct.quantity || 0);
-      let updatedStock = currentStock;
-      let actualChange = qtyNum;
+      const factor = Number(selectedProduct.conversion_factor || 1);
+      const currentPackages = Number(selectedProduct.quantity || 0);
+      const currentBaseStock = Number(selectedProduct.continuing_stock ?? currentPackages * factor);  
 
-      // 1. Calculate stock changes BEFORE updating database
+      let updatedPackages = currentPackages;
+      let updatedBaseStock = currentBaseStock;
+      let actualPackageChange = qtyNum;
+
       if (selectedType === "Restock") {
-        updatedStock = currentStock + qtyNum;
-        actualChange = qtyNum;
+        // Adding packages (e.g. +1 jar)
+        updatedPackages = currentPackages + qtyNum;
+        const baseUnitsAdded = qtyNum * factor; // +50 shots
+        updatedBaseStock = currentBaseStock + baseUnitsAdded;
+        actualPackageChange = qtyNum;
       } else if (selectedType === "Waste") {
-        updatedStock = Math.max(0, currentStock - qtyNum);
-        actualChange = -qtyNum; // Negative delta for audit trail
+        // Subtracting packages (e.g. -1 jar)
+        updatedPackages = Math.max(0, currentPackages - qtyNum);
+        const baseUnitsWasted = qtyNum * factor;
+        updatedBaseStock = Math.max(0, currentBaseStock - baseUnitsWasted);
+        actualPackageChange = -qtyNum;
       } else if (selectedType === "Correct_count") {
-        updatedStock = qtyNum;
-        actualChange = qtyNum - currentStock; // Difference for audit
+        // Setting exact package count (e.g. set total to 2 jars)
+        updatedPackages = qtyNum;
+        updatedBaseStock = qtyNum * factor;
+        actualPackageChange = qtyNum - currentPackages;
       }
 
       // 2. Update overall stock level in `products` collection with recalculated value
@@ -150,7 +153,9 @@ export default function RestockScreen() {
         DATABASE_ID,
         PRODUCTS_COLLECTION_ID,
         selectedProduct.$id,
-        { quantity: updatedStock }
+        { quantity: updatedPackages,
+          continuing_stock: updatedBaseStock,
+        }  
       );
 
       // 3. Create entry in `restock` collection if it's a restock
@@ -176,8 +181,10 @@ export default function RestockScreen() {
         {
           products_id: selectedProduct.$id,
           action_type: selectedType,
-          quantity_changed: actualChange, // Uses actualChange so Waste records negative numbers!
-          note: `${profileName.trim()} | ${note.trim() || "Inventory updated"}`,
+          quantity_changed: actualPackageChange,
+          note: note.trim() || "Inventory updated",
+          profile_name: profileName, 
+          profiles_id: currentProfile?.$id || undefined, 
         }
       );
 
@@ -187,7 +194,6 @@ export default function RestockScreen() {
       setQuantity("");
       setNote("");
       setExpireDate?.(""); // Reset expire date if state exists
-      setRestockUnit("");
       setSelectedProduct(null);
       setIsDropdownOpen(false);
 

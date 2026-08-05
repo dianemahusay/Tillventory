@@ -1,4 +1,4 @@
-import { Client, Databases } from 'react-native-appwrite';
+import { Client, Databases, Account } from 'react-native-appwrite';
 import 'react-native-url-polyfill/auto';
 
 const client = new Client()
@@ -9,4 +9,6 @@ client
   .setPlatform('com.cup.uno');
 
 export const databases = new Databases(client);
+export const account = new Account(client);
+
 export default client;
