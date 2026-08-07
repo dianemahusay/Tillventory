@@ -1,6 +1,7 @@
 // services/salesReportUtils.ts
 import { Query } from "react-native-appwrite";
 import { databases } from "./appwrite";
+import { getProducts } from "./productsCache";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
 const SALE_COLLECTION_ID = "sales";
@@ -62,7 +63,7 @@ export const fetchSalesReport = async (
         Query.orderDesc("$createdAt"),
         Query.limit(500),
       ]),
-      databases.listDocuments(DATABASE_ID, PRODUCTS_COLLECTION_ID),
+      getProducts(databases),
       databases.listDocuments(DATABASE_ID, LOGS_COLLECTION_ID, [
         Query.greaterThanEqual("$createdAt", breakdownStartDate.toISOString()),
         Query.lessThanEqual("$createdAt", endDate),
@@ -73,7 +74,7 @@ export const fetchSalesReport = async (
 
     // 1. Map Base Unit Costs (cost / conversion_factor)
     const baseUnitCostMap: Record<string, number> = {};
-    productsRes.documents.forEach((doc: any) => {
+    (productsRes || []).forEach((doc: any) => {
       const packageCost = Number(doc.cost || doc.unit_cost || 0);
       const conversionRate = Number(doc.conversion_factor) || 1;
       baseUnitCostMap[doc.$id] = packageCost / conversionRate;

@@ -1,8 +1,9 @@
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { ID, Models, Query } from "react-native-appwrite";
+import { ID, Models } from "react-native-appwrite";
 import { databases } from "../services/appwrite";
+import { getProducts, invalidateProductsCache } from "../services/productsCache";
 import { useGlobalProfiles } from "./_layout";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
@@ -43,6 +44,9 @@ export default function RestockScreen() {
   });
 
   const profileName = currentProfile?.name || requestedName || "Owner";
+  const isOwnerProfile =
+    currentProfile?.role === "owner" ||
+    (profileName || "").trim().toLowerCase() === "owner";
 
   const [selectedType, setSelectedType] = useState<InventoryAction>("Restock");
   const [quantity, setQuantity] = useState<string>("");
@@ -64,11 +68,11 @@ export default function RestockScreen() {
   }, []);
 
   // Fetch registered Products and recent Inventory Audit Logs from Appwrite
-  const fetchScreenData = async () => {
+  const fetchScreenData = async (forceRefresh = false) => {
     try {
       setIsLoading(true);
-      const prodRes = await databases.listDocuments(DATABASE_ID, PRODUCTS_COLLECTION_ID);
-      setProductsList(prodRes.documents as unknown as ProductItem[]);
+      const products = await getProducts(databases, forceRefresh);
+      setProductsList(products as unknown as ProductItem[]);
     } catch (error) {
       console.error("Error fetching restock data:", error);
       Alert.alert("Error", "Could not fetch data from Appwrite.");
@@ -197,7 +201,9 @@ export default function RestockScreen() {
       setSelectedProduct(null);
       setIsDropdownOpen(false);
 
-      fetchScreenData();
+      // Invalidate the cached products so other screens will get fresh data
+      invalidateProductsCache();
+      fetchScreenData(true);
     } catch (error: any) {
       console.error("Failed to update stock:", error);
       Alert.alert("Error", error?.message || "Could not update stock in Appwrite.");
@@ -422,7 +428,10 @@ export default function RestockScreen() {
       </View>
 
       {/* Navigation Redirect Button */}
-      <TouchableOpacity onPress={() => router.replace("/new-sale")} className="mt-2 self-center">
+      <TouchableOpacity
+        onPress={() => router.replace(isOwnerProfile ? "/owner-dash" : "/new-sale")}
+        className="mt-2 self-center"
+      >
         <Text className="text-sm text-neutral-400 font-bodySemiBold underline">
           Back to Dashboard
         </Text>

@@ -1,23 +1,24 @@
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Keyboard,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Keyboard,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    View,
 } from "react-native";
 import { ID, Models, Query } from "react-native-appwrite";
 import { databases } from "../services/appwrite";
+import { getProducts } from "../services/productsCache";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
 const RECIPE_COLLECTION_ID = "recipe";
@@ -83,13 +84,13 @@ export default function RecipesScreen() {
   const loadInitialData = async () => {
     try {
       setIsLoading(true);
-      const [menuRes, prodRes] = await Promise.all([
+      const [menuRes, productsList] = await Promise.all([
         databases.listDocuments(DATABASE_ID, MENU_COLLECTION_ID),
-        databases.listDocuments(DATABASE_ID, PRODUCTS_COLLECTION_ID),
+        getProducts(databases),
       ]);
 
       setMenuItems(menuRes.documents as unknown as MenuItemRef[]);
-      setAvailableProducts(prodRes.documents as unknown as ProductItem[]);
+      setAvailableProducts(productsList as unknown as ProductItem[]);
     } catch (error) {
       console.error("Error loading recipe screen data:", error);
       Alert.alert("Error", "Could not fetch data from Appwrite.");
@@ -153,15 +154,19 @@ export default function RecipesScreen() {
           } 
           // If products_id is just a string ID, fetch the product document directly
           else if (typeof doc.products_id === "string" && doc.products_id) {
-            try {
-              const pDoc = await databases.getDocument(
-                DATABASE_ID,
-                PRODUCTS_COLLECTION_ID,
-                doc.products_id
-              );
-              productObj = pDoc as unknown as ProductItem;
-            } catch (e) {
-              console.error("Could not fetch product for ID:", doc.products_id);
+            // Try to resolve from the cached availableProducts list first
+            productObj = availableProducts.find((p) => p.$id === doc.products_id) || null;
+            if (!productObj) {
+              try {
+                const pDoc = await databases.getDocument(
+                  DATABASE_ID,
+                  PRODUCTS_COLLECTION_ID,
+                  doc.products_id
+                );
+                productObj = pDoc as unknown as ProductItem;
+              } catch (e) {
+                console.error("Could not fetch product for ID:", doc.products_id);
+              }
             }
           }
 

@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { ID, Models, Query } from "react-native-appwrite";
 import { databases } from '../services/appwrite';
+import { getProducts } from '../services/productsCache';
 import { useGlobalProfiles } from "./_layout";
 
 // Blueprints for your local cart entries
@@ -110,6 +111,10 @@ export default function NewSale() {
 
     try {
       // 1. Process recipe inventory deductions for each item in the cart
+      // Load product cache once to avoid per-item network calls
+      const productsList = await getProducts(databases);
+      const productsMap = new Map(productsList.map((p: any) => [p.$id, p]));
+
       for (const item of cartArray) {
         // Fetch the recipe ingredients needed for this menu item
         const recipeRes = await databases.listDocuments(
@@ -125,14 +130,14 @@ export default function NewSale() {
           const baseUnitsNeeded = amountPerOrder * item.quantity;      // 2 shots
 
           if (productId && baseUnitsNeeded > 0) {
-            const productDoc = await databases.getDocument(
+            const productDoc = productsMap.get(productId) || (await databases.getDocument(
               DATABASE_ID,
               PRODUCTS_COLLECTION_ID,
               productId
-            );
+            ));
 
-            const currentBaseStock = Number(productDoc.continuing_stock || 0); // e.g., 50 shots
-            const factor = Number(productDoc.conversion_factor || 1);         // 50 shots/jar
+            const currentBaseStock = Number(productDoc.continuing_stock || 0);
+            const factor = Number(productDoc.conversion_factor || 1);
 
             // 1. Deduct directly from continuing_stock
             const newBaseStock = Math.max(0, currentBaseStock - baseUnitsNeeded); // 50 - 2 = 48 shots

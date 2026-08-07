@@ -2,6 +2,7 @@ import { router, Stack, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { databases } from "../services/appwrite";
+import { getProducts } from "../services/productsCache";
 import { isProductLowStock, ProductItem, renderStockText } from "../services/stockUtils";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
@@ -19,15 +20,10 @@ export default function ViewStockScreen() {
     fetchStockData();
   }, []);
 
-  const fetchStockData = async () => {
+  const fetchStockData = async (forceRefresh = false) => {
     try {
       setIsLoading(true);
-      const response = await databases.listDocuments(
-        DATABASE_ID,
-        PRODUCTS_COLLECTION_ID
-      );
-
-      const allProducts = response.documents as unknown as ProductItem[];
+      const allProducts = await getProducts(databases, forceRefresh);
 
       // --- Filter ONLY low stock products ---
       const onlyLowStock = allProducts.filter((item) => isProductLowStock(item));
@@ -43,7 +39,7 @@ export default function ViewStockScreen() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    void fetchStockData();
+    void fetchStockData(true);
   }, []);
 
   return (

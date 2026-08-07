@@ -1,5 +1,6 @@
 import { Query } from "react-native-appwrite";
 import { databases } from "./appwrite";
+import { getProducts } from "./productsCache";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
 const PRODUCTS_COLLECTION_ID = "products";
@@ -47,11 +48,8 @@ export const fetchInventoryReport = async (
   try {
     const { startDate, endDate } = getPeriodDates(period);
 
-    // 1. Fetch all products
-    const productsRes = await databases.listDocuments(
-      DATABASE_ID,
-      PRODUCTS_COLLECTION_ID
-    );
+    // 1. Fetch all products (cached)
+    const productsRes = await getProducts(databases);
 
     // 2. Fetch all inventory logs recorded within the timeframe
     const logsRes = await databases.listDocuments(
@@ -93,7 +91,7 @@ export const fetchInventoryReport = async (
     });
 
     // 4. Combine aggregated stats with registered products list
-    return productsRes.documents.map((pDoc: any): InventoryReportItem => {
+    return (productsRes || []).map((pDoc: any): InventoryReportItem => {
       const stats = reportMap[pDoc.$id] || { restockedPackages: 0, baseUnitsUsed: 0 };
       const factor = Number(pDoc.conversion_factor) || 1;
 

@@ -1,5 +1,6 @@
 import { Query } from "react-native-appwrite";
 import { databases } from "./appwrite";
+import { getProducts } from "./productsCache";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
 const SALE_COLLECTION_ID = "sales";
@@ -77,16 +78,16 @@ export const fetchCombinedActivities = async (options?: {
     }
 
     // 🚀 Parallel execution: Fetch Sales, Inventory Logs, Products, and Profiles all at once
-    const [salesRes, logsRes, productsRes, profilesRes] = await Promise.all([
+    const [salesRes, logsRes, productsList, profilesRes] = await Promise.all([
       databases.listDocuments(DATABASE_ID, SALE_COLLECTION_ID, queries),
       databases.listDocuments(DATABASE_ID, LOGS_COLLECTION_ID, queries),
-      databases.listDocuments(DATABASE_ID, PRODUCTS_COLLECTION_ID),
+      getProducts(databases),
       databases.listDocuments(DATABASE_ID, PROFILES_COLLECTION_ID).catch(() => ({ documents: [] })),
     ]);
 
     // Create fast lookup maps for profiles and products
     const profilesMap = new Map<string, any>(profilesRes.documents.map((p: any) => [p.$id, p]));
-    const productsMap = new Map<string, any>(productsRes.documents.map((p: any) => [p.$id, p]));
+    const productsMap = new Map<string, any>((productsList || []).map((p: any) => [p.$id, p]));
 
     // 1. Format Sales Entries
     const formattedSales: CombinedActivityLog[] = salesRes.documents.map((doc: any) => {

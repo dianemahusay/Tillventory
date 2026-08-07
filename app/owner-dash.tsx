@@ -4,6 +4,7 @@ import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, 
 import { Query } from "react-native-appwrite";
 import { CombinedActivityLog, fetchCombinedActivities } from "../services/activityUtils";
 import { databases } from "../services/appwrite";
+import { getProducts } from "../services/productsCache";
 import { filterLowStockProducts, ProductItem, renderStockText } from "../services/stockUtils";
 
 const DATABASE_ID = "6a694ca9001b95d71b14";
@@ -35,14 +36,14 @@ export default function OwnerDashboard() {
       const isoToday = startOfToday.toISOString();
 
       // 2. Fetch sales, products, and combined activities concurrently
-      const [salesRes, productsRes, activities] = await Promise.all([
+      const [salesRes, productsList, activities] = await Promise.all([
         // Fetch Today's Sales
         databases.listDocuments(DATABASE_ID, SALE_COLLECTION_ID, [
           Query.greaterThanEqual("$createdAt", isoToday),
           Query.orderDesc("$createdAt"),
         ]),
-        // Fetch All Products for Low Stock calculation
-        databases.listDocuments(DATABASE_ID, PRODUCTS_COLLECTION_ID),
+        // Fetch All Products for Low Stock calculation (cached)
+        getProducts(databases),
         // Fetch Recent Activity Stream using Shared Utility
         fetchCombinedActivities({ todayOnly: true, limit: 10 }),
       ]);
@@ -58,7 +59,7 @@ export default function OwnerDashboard() {
       setTodaysSales(totalRevenue);
 
       // --- Filter Low Stock Items using Shared Utility ---
-      const allProducts = productsRes.documents as unknown as ProductItem[];
+      const allProducts = productsList as unknown as ProductItem[];
       setLowStockItems(filterLowStockProducts(allProducts));
 
       // --- Set Activities ---
