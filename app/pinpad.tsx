@@ -117,7 +117,7 @@ export default function PinPad() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <View className="items-center mb-29">
-          <Text className="text-4xl font-heading mb-2">Cafe Uno</Text>
+          <Text className="text-4xl font-heading mb-2">Tillventory</Text>
           <Text className="text-sm text-neutral-400 font-medium">Authentication Success</Text>
         </View>
 
@@ -149,7 +149,7 @@ export default function PinPad() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       <View className="items-center mb-8">
-        <Text className="text-4xl text-textPrimary font-heading mb-2">Cafe Uno</Text>
+        <Text className="text-4xl text-textPrimary font-heading mb-2">Tillventory</Text>
         <TouchableOpacity onPress={() => router.back()}>
           <Text className="text-sm text-textSecondary font-body underline">
             Not {currentProfile || "your profile"}? Switch

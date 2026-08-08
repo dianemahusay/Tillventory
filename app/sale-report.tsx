@@ -42,7 +42,7 @@ export default function SalesReportScreen() {
       {/* Header */}
       <View className="px-6 mb-4">
         <Text className="text-4xl text-textPrimary font-heading pb-2 border-b border-neutral-400 mt-4">
-          Cafe Uno
+          Tillventory
         </Text>
       </View>
 

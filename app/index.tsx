@@ -32,7 +32,7 @@ export default function Index() {
       >
         <View className="items-center justify-center mb-6">
           <Text className="text-3xl font-bold text-textPrimary border-accent pb-1 font-heading text-center">
-            Welcome to Cafe Uno
+            Welcome to Tillventory
           </Text>
           <Text className="text-base text-textSecondary font-body mt-2 text-center mb-9">
             Who's on shift today?

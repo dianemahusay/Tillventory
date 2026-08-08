@@ -221,7 +221,7 @@ export default function NewSale() {
         {/* Top Header Section with Hamburger on the right ONLY for staff */}
         <View className="flex-row justify-between items-center mb-4 border-b border-neutral-300 pb-2">
           <Text className="text-4xl text-textPrimary font-heading">
-            Cafe Uno
+            Tillventory
           </Text>
 
           {/* STAFF CONDITION GUARD: logs in */}

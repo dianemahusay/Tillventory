@@ -230,7 +230,7 @@ export default function RestockScreen() {
       {/* Top Branding Section */}
       <View className="mb-6">
         <Text className="text-4xl text-neutral-800 font-heading pb-2 border-b border-neutral-400">
-          Cafe Uno
+          Tillventory
         </Text>
       </View>
 

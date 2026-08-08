@@ -429,7 +429,7 @@ export default function RecipesScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <View className="mb-4">
-          <Text className="text-4xl font-heading pb-2 border-b border-neutral-400">Cafe Uno</Text>
+          <Text className="text-4xl font-heading pb-2 border-b border-neutral-400">Tillventory</Text>
         </View>
 
         {/* FIX #1: Pass `null` instead of "New Recipe" string */}

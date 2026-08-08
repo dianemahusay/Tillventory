@@ -109,7 +109,7 @@ export default function ManageProfilesScreen() {
       >
         {/* Top Header Section */}
         <View className="mb-6">
-          <Text className="text-4xl font-heading pb-2 border-b border-neutral-400">Cafe Uno</Text>
+          <Text className="text-4xl font-heading pb-2 border-b border-neutral-400">Tillventory</Text>
         </View>
 
         <Text className="text-lg font-bodyBold text-neutral-900 mb-4">Active Staff Profiles</Text>

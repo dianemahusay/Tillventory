@@ -93,7 +93,7 @@ export default function OwnerDashboard() {
     >
       <View className="mb-6">
         <Text className="text-4xl font-heading pb-2 border-b border-neutral-400">
-          Cafe Uno
+          Tillventory
         </Text>
       </View>
 
