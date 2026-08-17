@@ -24,17 +24,6 @@
 
 ---
 
-## 🏗️ Architecture & Database Setup
-
-Tillventory leverages Appwrite for its backend services and real-time database management.
-
-### Key Database Collections / Models
-- **`Products / Items`**: Stores item name, pricing, category, current stock levels, units, and restock thresholds.
-- **`Orders / Transactions`**: Records completed transactions, total amounts, timestamps, and payment statuses.
-- **`Activity Logs / Staff`**: Tracks order processing by staff members and administrative inventory adjustments.
-
----
-
 ## 🚀 Getting Started
 
 Follow these steps to set up and run the project locally.
@@ -85,19 +74,21 @@ Follow these steps to set up and run the project locally.
 
 ```text
 Tillventory/
-├── assets/             # App icons, splash screens, and images
-├── src/
-│   ├── components/     # Reusable UI components (buttons, cards, inputs)
-│   ├── config/         # Appwrite initialization and environment configs
-│   ├── navigation/     # React Navigation stacks and tabs
-│   ├── screens/        # Main screens (Dashboard, POS, Inventory, Reports)
-│   ├── services/       # Appwrite database queries and API calls
-│   ├── types/          # TypeScript interfaces and type declarations
-│   └── utils/          # Helper functions and formatting utilities
-├── .env.example        # Template for required environment variables
-├── App.tsx             # Main entry point
-├── package.json
-└── README.md
+├── app/                  # Expo Router file-based routes, screens, and layouts
+├── assets/               # App icons, splash screens, and images
+├── services/             # Appwrite API clients, database queries, and service functions
+├── .gitignore            # Git ignore rules
+├── AGENTS.md             # AI agents instructions and workspace configuration
+├── CLAUDE.md             # Claude project guidelines and context
+├── README.md             # Project documentation
+├── app.json              # Expo configuration file
+├── babel.config.js       # Babel compiler configuration
+├── eslint.config.js      # ESLint linting rules
+├── metro.config.js       # Metro bundler configuration
+├── nativewind-env.d.ts   # TypeScript declarations for NativeWind
+├── package.json          # Project dependencies and npm scripts
+├── tailwind.config.js    # TailwindCSS styling configuration
+└── tsconfig.json         # TypeScript configuration
 ```
 
 ---
